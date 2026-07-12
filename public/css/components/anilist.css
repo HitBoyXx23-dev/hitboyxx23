@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&display=swap');
+
 .anime-page {
   background: var(--bg);
 }
@@ -160,6 +162,16 @@
   padding: 3px 6px;
   background: rgba(5,6,10,.88);
   font-size: 9px;
+}
+
+.anime-grid-date-badge,
+.activity-date {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 14px;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: #f0f2fa;
 }
 
 .anime-grid-score-badge {
@@ -807,6 +819,18 @@ body.recent-activity-open {
   color: var(--muted);
   font-size: 11px;
   white-space: nowrap;
+}
+
+.detail-badge-wrap {
+  display: block;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: rgba(9,12,19,.9);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .detail-genre-pill {
