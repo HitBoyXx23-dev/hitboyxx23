@@ -152,11 +152,10 @@
   font-size: 9px;
 }
 
-.anime-grid-score-badge,
-.anime-grid-date-badge,
-.activity-date {
+.anime-grid-score-badge {
   position: absolute;
   top: 7px;
+  left: 7px;
   padding: 3px 6px;
   background: rgba(5,6,10,.88);
   font-size: 9px;
@@ -164,18 +163,17 @@
 
 .anime-grid-date-badge,
 .activity-date {
-  font-size: 11px;
-  font-weight: 600;
-  color: #f0f2fa;
-}
-
-.anime-grid-score-badge {
+  position: absolute;
+  bottom: 7px;
   left: 7px;
-}
-
-.anime-grid-date-badge,
-.activity-date {
-  right: 7px;
+  padding: 3px 7px;
+  background: rgba(5,6,10,.55);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: .01em;
+  color: #f0f2fa;
 }
 
 .character-grid {
