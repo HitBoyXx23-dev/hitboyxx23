@@ -14,6 +14,8 @@ let droppedAll = [];
 let completedPage = 1;
 let completedSearch = "";
 let lastRequestAt = 0;
+let animeModalMounted = false;
+const mediaLookup = new Map();
 
 const profileQuery = `
 query AnimeProfile($name: String!) {
@@ -70,10 +72,26 @@ query AnimeDashboard($name: String!) {
         title { english romaji }
         coverImage { large }
         episodes
+        duration
         format
+        status
         season
         seasonYear
         averageScore
+        genres
+        source
+        description
+        startDate { year month day }
+        endDate { year month day }
+        studios(isMain: true) {
+          nodes {
+            name
+          }
+        }
+        trailer {
+          id
+          site
+        }
       }
     }
   }
@@ -97,10 +115,26 @@ query AnimeDashboard($name: String!) {
         title { english romaji }
         coverImage { large }
         episodes
+        duration
         format
+        status
         season
         seasonYear
         averageScore
+        genres
+        source
+        description
+        startDate { year month day }
+        endDate { year month day }
+        studios(isMain: true) {
+          nodes {
+            name
+          }
+        }
+        trailer {
+          id
+          site
+        }
       }
     }
   }
@@ -124,10 +158,26 @@ query AnimeDashboard($name: String!) {
         title { english romaji }
         coverImage { large }
         episodes
+        duration
         format
+        status
         season
         seasonYear
         averageScore
+        genres
+        source
+        description
+        startDate { year month day }
+        endDate { year month day }
+        studios(isMain: true) {
+          nodes {
+            name
+          }
+        }
+        trailer {
+          id
+          site
+        }
       }
     }
   }
@@ -151,10 +201,26 @@ query AnimeDashboard($name: String!) {
         title { english romaji }
         coverImage { large }
         episodes
+        duration
         format
+        status
         season
         seasonYear
         averageScore
+        genres
+        source
+        description
+        startDate { year month day }
+        endDate { year month day }
+        studios(isMain: true) {
+          nodes {
+            name
+          }
+        }
+        trailer {
+          id
+          site
+        }
       }
     }
   }
@@ -175,10 +241,26 @@ query AnimeDashboard($name: String!) {
         title { english romaji }
         coverImage { large }
         episodes
+        duration
         format
+        status
         season
         seasonYear
         averageScore
+        genres
+        source
+        description
+        startDate { year month day }
+        endDate { year month day }
+        studios(isMain: true) {
+          nodes {
+            name
+          }
+        }
+        trailer {
+          id
+          site
+        }
       }
     }
   }
@@ -199,10 +281,26 @@ query AnimeDashboard($name: String!) {
         title { english romaji }
         coverImage { large }
         episodes
+        duration
         format
+        status
         season
         seasonYear
         averageScore
+        genres
+        source
+        description
+        startDate { year month day }
+        endDate { year month day }
+        studios(isMain: true) {
+          nodes {
+            name
+          }
+        }
+        trailer {
+          id
+          site
+        }
       }
     }
   }
@@ -230,10 +328,26 @@ query AnimeList($name: String!, $status: MediaListStatus!, $page: Int!) {
         title { english romaji }
         coverImage { large }
         episodes
+        duration
         format
+        status
         season
         seasonYear
         averageScore
+        genres
+        source
+        description
+        startDate { year month day }
+        endDate { year month day }
+        studios(isMain: true) {
+          nodes {
+            name
+          }
+        }
+        trailer {
+          id
+          site
+        }
       }
     }
   }
@@ -534,6 +648,65 @@ function dateOf(timestamp) {
   }).format(new Date(timestamp * 1000));
 }
 
+function formatStatus(status) {
+  const labels = {
+    FINISHED: "Finished",
+    RELEASING: "Releasing",
+    NOT_YET_RELEASED: "Not Yet Released",
+    CANCELLED: "Cancelled",
+    HIATUS: "Hiatus"
+  };
+
+  return labels[status] || "";
+}
+
+function formatSource(source) {
+  return String(source || "")
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function formatFuzzyDate(date) {
+  if (!date?.year) return "";
+  if (!date?.month || !date?.day) return String(date.year);
+
+  return `${date.month}/${date.day}/${date.year}`;
+}
+
+function stripDescription(html) {
+  return String(html || "")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<\/?i>/gi, "")
+    .replace(/<\/?b>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function studiosOf(media) {
+  return (media?.studios?.nodes || [])
+    .map((studio) => studio?.name)
+    .filter(Boolean)
+    .join(", ");
+}
+
+function trailerUrl(media) {
+  const trailer = media?.trailer;
+  if (!trailer?.id) return "";
+
+  if (trailer.site === "youtube") {
+    return `https://www.youtube.com/watch?v=${trailer.id}`;
+  }
+
+  if (trailer.site === "dailymotion") {
+    return `https://www.dailymotion.com/video/${trailer.id}`;
+  }
+
+  return "";
+}
+
 function officialStatusCount(user, status) {
   const statuses = user?.statistics?.anime?.statuses || [];
   return Number(
@@ -559,7 +732,6 @@ function statsBar(user) {
   const values = [
     [((Number(stats.minutesWatched) || 0) / 1440).toFixed(1), "Days Watched"],
     [(Number(stats.episodesWatched) || 0).toLocaleString(), "Episodes"],
-    [(Number(stats.meanScore) || 0).toFixed(1), "Mean Score"],
     [(Number(stats.count) || 0).toLocaleString(), "Total Anime"],
     [officialStatusCount(user, "COMPLETED").toLocaleString(), "Completed"],
     [officialStatusCount(user, "CURRENT").toLocaleString(), "Watching"],
@@ -622,10 +794,15 @@ function currentCard(entry) {
     ? Math.min(100, progress / episodes * 100)
     : 0;
 
+  if (media?.id) {
+    mediaLookup.set(String(media.id), { entry, media });
+  }
+
   return `
     <a
       class="anime-card"
       href="${escapeHtml(media?.siteUrl || "#")}"
+      data-media-id="${escapeHtml(media?.id ?? "")}"
       target="_blank"
       rel="noopener noreferrer"
     >
@@ -669,10 +846,15 @@ function currentCard(entry) {
 function gridCard(entry) {
   const media = entry.media;
 
+  if (media?.id) {
+    mediaLookup.set(String(media.id), { entry, media });
+  }
+
   return `
     <a
       class="anime-grid-item"
       href="${escapeHtml(media?.siteUrl || "#")}"
+      data-media-id="${escapeHtml(media?.id ?? "")}"
       target="_blank"
       rel="noopener noreferrer"
     >
@@ -687,7 +869,7 @@ function gridCard(entry) {
           : ""
         }
         ${entry.updatedAt
-          ? `<div class="anime-grid-date-badge">${escapeHtml(dateOf(entry.updatedAt))}</div>`
+          ? `<div class="anime-grid-date-badge" style="font-size:13px;">${escapeHtml(dateOf(entry.updatedAt))}</div>`
           : ""
         }
       </div>
@@ -765,7 +947,7 @@ function recentActivitySection(activities) {
                   alt="${escapeHtml(titleOf(media))}"
                   loading="lazy"
                 >
-                <div class="activity-date">
+                <div class="activity-date" style="font-size:13px;">
                   ${escapeHtml(dateOf(activity.createdAt))}
                 </div>
               </div>
@@ -1139,7 +1321,7 @@ function mountRecentActivityButton(activities) {
                 ? `<small class="recent-activity-meta">${escapeHtml(activityMediaMeta(media))}</small>`
                 : ""
               }
-              <time>${escapeHtml(dateOf(activity.createdAt))}</time>
+              <time style="font-size:13px;">${escapeHtml(dateOf(activity.createdAt))}</time>
             </span>
           </a>
         `;
@@ -1187,9 +1369,203 @@ function mountRecentActivityButton(activities) {
   document.body.append(backdrop, modal, button);
 }
 
+function detailBadge(text) {
+  return `<span style="background:#212127;color:#c7c7ce;padding:4px 10px;border-radius:6px;font-size:12px;white-space:nowrap;">${escapeHtml(text)}</span>`;
+}
+
+function detailGenrePill(text) {
+  return `<span style="background:#5b3aa0;color:#f2eeff;padding:4px 10px;border-radius:6px;font-size:12px;">${escapeHtml(text)}</span>`;
+}
+
+function animeModalContent(record) {
+  const entry = record.entry;
+  const media = record.media;
+
+  const badges = [
+    media.format,
+    formatStatus(media.status),
+    seasonOf(media),
+    media.episodes ? `${media.episodes} eps` : "",
+    media.duration ? `${media.duration} min` : ""
+  ].filter(Boolean);
+
+  const infoBadges = [];
+  const studios = studiosOf(media);
+  const source = formatSource(media.source);
+
+  if (studios) infoBadges.push(`studio: ${studios}`);
+  if (source) infoBadges.push(`source: ${source}`);
+
+  const progressText = entry
+    ? `progress: ${Number(entry.progress) || 0}${media.episodes ? ` / ${media.episodes}` : ""}`
+    : "";
+
+  const aired = [
+    formatFuzzyDate(media.startDate),
+    formatFuzzyDate(media.endDate)
+  ].filter(Boolean).join(" – ");
+
+  const genres = (media.genres || []).slice(0, 5);
+  const trailer = trailerUrl(media);
+
+  return `
+    <button
+      data-close
+      type="button"
+      aria-label="Close"
+      style="position:absolute;top:16px;right:16px;background:none;border:none;color:#8a8a92;font-size:22px;line-height:1;cursor:pointer;"
+    >×</button>
+
+    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+      <img
+        src="${escapeHtml(media.coverImage?.large || "")}"
+        alt="${escapeHtml(titleOf(media))}"
+        style="width:140px;border-radius:8px;flex-shrink:0;"
+      >
+
+      <div style="flex:1;min-width:200px;">
+        <h2 style="margin:0 0 10px;font-size:22px;color:#f2f2f6;">
+          ${escapeHtml(titleOf(media))}
+        </h2>
+
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${badges.map(detailBadge).join("")}
+        </div>
+
+        ${media.averageScore ? `
+          <div style="margin-top:10px;font-size:14px;">
+            <span style="color:#f5c518;">★</span>
+            <strong style="color:#f2f2f6;">${(media.averageScore / 10).toFixed(1)}</strong>
+            <span style="color:#8a8a92;">(average)</span>
+          </div>
+        ` : ""}
+
+        ${infoBadges.length ? `
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">
+            ${infoBadges.map(detailBadge).join("")}
+          </div>
+        ` : ""}
+
+        ${progressText ? `
+          <div style="margin-top:10px;">
+            ${detailBadge(progressText)}
+          </div>
+        ` : ""}
+
+        ${aired ? `
+          <div style="margin-top:10px;font-size:13px;color:#8a8a92;">
+            aired: ${escapeHtml(aired)}
+          </div>
+        ` : ""}
+
+        ${genres.length ? `
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">
+            ${genres.map(detailGenrePill).join("")}
+          </div>
+        ` : ""}
+      </div>
+    </div>
+
+    ${media.description ? `
+      <hr style="border:none;border-top:1px solid #2a2a30;margin:20px 0;">
+      <p style="font-size:14px;line-height:1.6;color:#c7c7ce;margin:0;">
+        ${escapeHtml(stripDescription(media.description))}
+      </p>
+    ` : ""}
+
+    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+      <a
+        href="${escapeHtml(media.siteUrl || "#")}"
+        target="_blank"
+        rel="noopener noreferrer"
+        style="flex:1;min-width:120px;text-align:center;background:#7c4de0;color:#fff;padding:10px 16px;border-radius:8px;font-weight:600;text-decoration:none;font-size:14px;"
+      >view on anilist</a>
+
+      ${trailer ? `
+        <a
+          href="${escapeHtml(trailer)}"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="flex:1;min-width:120px;text-align:center;background:#7c4de0;color:#fff;padding:10px 16px;border-radius:8px;font-weight:600;text-decoration:none;font-size:14px;"
+        >trailer</a>
+      ` : ""}
+
+      <button
+        data-close
+        type="button"
+        style="flex:0 0 auto;background:#212127;color:#c7c7ce;padding:10px 16px;border-radius:8px;font-weight:600;border:none;cursor:pointer;font-size:14px;"
+      >close</button>
+    </div>
+  `;
+}
+
+function ensureAnimeModalMounted() {
+  if (animeModalMounted) return;
+  animeModalMounted = true;
+
+  const backdrop = document.createElement("button");
+  backdrop.id = "anime-detail-backdrop";
+  backdrop.type = "button";
+  backdrop.setAttribute("aria-label", "Close anime details");
+  backdrop.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.75);border:none;padding:0;margin:0;cursor:pointer;z-index:998;display:none;";
+  backdrop.addEventListener("click", closeAnimeModal);
+
+  const modal = document.createElement("section");
+  modal.id = "anime-detail-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:600px;max-height:88vh;overflow-y:auto;background:#121216;border:1px solid #2a2a30;border-radius:14px;padding:24px;z-index:999;display:none;color:#e6e6ec;box-shadow:0 20px 60px rgba(0,0,0,.5);";
+
+  document.body.append(backdrop, modal);
+}
+
+function closeAnimeModal() {
+  document.querySelector("#anime-detail-modal")
+    ?.style.setProperty("display", "none");
+
+  document.querySelector("#anime-detail-backdrop")
+    ?.style.setProperty("display", "none");
+
+  document.body.classList.remove("anime-detail-open");
+}
+
+function openAnimeModal(id) {
+  const record = mediaLookup.get(String(id));
+  if (!record) return;
+
+  ensureAnimeModalMounted();
+
+  const modal = document.querySelector("#anime-detail-modal");
+  const backdrop = document.querySelector("#anime-detail-backdrop");
+  if (!modal || !backdrop) return;
+
+  modal.innerHTML = animeModalContent(record);
+
+  modal.querySelectorAll("[data-close]").forEach((button) => {
+    button.addEventListener("click", closeAnimeModal);
+  });
+
+  modal.style.display = "block";
+  backdrop.style.display = "block";
+  document.body.classList.add("anime-detail-open");
+}
+
+document.addEventListener("click", (event) => {
+  const trigger = event.target.closest("[data-media-id]");
+  if (!trigger) return;
+  if (!root?.contains(trigger)) return;
+
+  const id = trigger.dataset.mediaId;
+  if (!id) return;
+
+  event.preventDefault();
+  openAnimeModal(id);
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeRecentActivityModal();
+    closeAnimeModal();
   }
 });
 
