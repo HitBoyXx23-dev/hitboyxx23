@@ -90,11 +90,14 @@
 }
 
 .anime-grid-item:hover,
-.activity-card:hover,
-.anime-card:hover {
+.activity-card:hover {
   border-color: var(--blue);
   box-shadow: 0 16px 36px rgba(62,29,112,.28);
   transform: translateY(-4px);
+}
+
+.anime-card:hover {
+  border-color: var(--blue);
 }
 
 .anime-grid-cover,
@@ -167,11 +170,7 @@
   left: 7px;
   padding: 3px 7px;
   background: rgba(5,6,10,.55);
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 12px;
-  font-style: italic;
-  font-weight: 600;
-  letter-spacing: .01em;
+  font-size: 9px;
   color: #f0f2fa;
 }
 
@@ -836,12 +835,6 @@ body.recent-activity-open {
 
 .detail-score .star {
   color: #f1bf4f;
-}
-
-.detail-aired {
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .detail-description {
