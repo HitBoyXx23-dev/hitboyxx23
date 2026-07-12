@@ -1470,13 +1470,6 @@ function animeModalContent(record) {
   const trailer = trailerUrl(media);
 
   return `
-    <button
-      class="detail-close"
-      data-close
-      type="button"
-      aria-label="Close"
-    >×</button>
-
     <div class="detail-header">
       <img
         class="detail-cover"
@@ -1620,13 +1613,6 @@ function characterModalContent(character) {
   const alternateNames = alternateNamesOf(character);
 
   return `
-    <button
-      class="detail-close"
-      data-close
-      type="button"
-      aria-label="Close"
-    >×</button>
-
     <div class="detail-header">
       <img
         class="detail-cover"
