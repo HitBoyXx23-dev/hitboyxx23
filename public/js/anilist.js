@@ -1,4 +1,3 @@
-
 import { CONFIG } from "./config.js";
 
 const root = document.querySelector("#anilist-stats");
@@ -10,9 +9,10 @@ const STALE_CACHE_TTL = 24 * 60 * 60 * 1000;
 const REQUEST_GAP = 500;
 
 let completedAll = [];
+let plannedAll = [];
+let droppedAll = [];
 let completedPage = 1;
 let completedSearch = "";
-let completedFullyLoaded = false;
 let lastRequestAt = 0;
 
 const profileQuery = `
@@ -106,6 +106,9 @@ query AnimeDashboard($name: String!) {
   }
 
   planned: Page(page: 1, perPage: 50) {
+    pageInfo {
+      hasNextPage
+    }
     mediaList(
       userName: $name
       type: ANIME
@@ -130,6 +133,9 @@ query AnimeDashboard($name: String!) {
   }
 
   dropped: Page(page: 1, perPage: 50) {
+    pageInfo {
+      hasNextPage
+    }
     mediaList(
       userName: $name
       type: ANIME
@@ -203,8 +209,8 @@ query AnimeDashboard($name: String!) {
 }
 `;
 
-const completedPageQuery = `
-query CompletedAnime($name: String!, $page: Int!) {
+const listPageQuery = `
+query AnimeList($name: String!, $status: MediaListStatus!, $page: Int!) {
   Page(page: $page, perPage: 50) {
     pageInfo {
       hasNextPage
@@ -212,7 +218,7 @@ query CompletedAnime($name: String!, $page: Int!) {
     mediaList(
       userName: $name
       type: ANIME
-      status: COMPLETED
+      status: $status
       sort: UPDATED_TIME_DESC
     ) {
       progress
@@ -298,7 +304,7 @@ function writeCache(name, value) {
       })
     );
   } catch {
-    // The page remains usable when storage is unavailable.
+    return;
   }
 }
 
@@ -417,15 +423,16 @@ async function loadDashboard() {
   );
 }
 
-async function loadCompletedPage(page) {
+async function loadListPage(status, page) {
   const data = await post(
-    completedPageQuery,
+    listPageQuery,
     {
       name: CONFIG.anilistUsername,
+      status,
       page
     },
     {
-      cacheName: `completed-page-${page}`
+      cacheName: `list-${status}-${page}`
     }
   );
 
@@ -435,13 +442,13 @@ async function loadCompletedPage(page) {
   };
 }
 
-async function loadAllCompleted(firstPage) {
+async function loadAllForStatus(status, firstPage) {
   const all = [...(firstPage?.mediaList || [])];
   let page = 2;
   let hasNextPage = Boolean(firstPage?.pageInfo?.hasNextPage);
 
   while (hasNextPage && page <= 20) {
-    const result = await loadCompletedPage(page);
+    const result = await loadListPage(status, page);
     all.push(...(result.mediaList || []));
     hasNextPage = Boolean(result.pageInfo?.hasNextPage);
     page += 1;
@@ -809,11 +816,6 @@ function completedSection(user) {
         total.toLocaleString()
       )}
 
-      <div class="anime-list-note" id="completed-list-note">
-        Showing ${completedAll.length.toLocaleString()} loaded entries.
-        Search loads the full completed list when needed.
-      </div>
-
       <div class="anime-search">
         <input
           type="search"
@@ -828,16 +830,6 @@ function completedSection(user) {
       <div class="pagination" id="completed-pagination"></div>
     </section>
   `;
-}
-
-function updateCompletedListNote() {
-  const note = document.querySelector("#completed-list-note");
-
-  if (!note) return;
-
-  note.textContent = completedFullyLoaded
-    ? `All ${completedAll.length.toLocaleString()} completed entries loaded.`
-    : `Showing ${completedAll.length.toLocaleString()} loaded entries. Search loads the full completed list when needed.`;
 }
 
 function filteredCompleted() {
@@ -859,7 +851,6 @@ function filteredCompleted() {
 }
 
 function renderCompleted() {
-  updateCompletedListNote();
   const grid = document.querySelector("#completed-grid");
   const pagination = document.querySelector("#completed-pagination");
 
@@ -957,15 +948,6 @@ function profileSection(user) {
     </section>
   `;
 }
-
-async function ensureAllCompleted(firstPage) {
-  if (completedFullyLoaded) return;
-
-  completedAll = await loadAllCompleted(firstPage);
-  completedFullyLoaded = true;
-}
-
-
 
 function activityEpisodeText(activity) {
   const rawStatus = String(activity?.status || "");
@@ -1112,14 +1094,13 @@ function mountRecentActivityButton(activities) {
   const modal = document.createElement("section");
   modal.id = "recent-activity-modal";
   modal.className = "recent-activity-modal";
-  
+
   modal.setAttribute("role", "dialog");
   modal.setAttribute("aria-modal", "true");
   modal.setAttribute("aria-label", "Recent Activity");
   modal.innerHTML = `
     <div class="recent-activity-modal-header">
       <div>
-        
         <h2>Recent Activity</h2>
       </div>
 
@@ -1234,15 +1215,27 @@ async function loadAnime() {
     }
 
     const current = dashboard.current?.mediaList || [];
-    const planned = dashboard.planned?.mediaList || [];
-    const dropped = dashboard.dropped?.mediaList || [];
+
     const firstCompleted = dashboard.completed || {
       mediaList: [],
       pageInfo: { hasNextPage: false }
     };
 
-    completedAll = firstCompleted.mediaList || [];
-    completedFullyLoaded = !firstCompleted.pageInfo?.hasNextPage;
+    const firstPlanned = dashboard.planned || {
+      mediaList: [],
+      pageInfo: { hasNextPage: false }
+    };
+
+    const firstDropped = dashboard.dropped || {
+      mediaList: [],
+      pageInfo: { hasNextPage: false }
+    };
+
+    [completedAll, plannedAll, droppedAll] = await Promise.all([
+      loadAllForStatus("COMPLETED", firstCompleted),
+      loadAllForStatus("PLANNING", firstPlanned),
+      loadAllForStatus("DROPPED", firstDropped)
+    ]);
 
     const characters = user.favourites?.characters?.nodes || [];
 
@@ -1260,8 +1253,8 @@ async function loadAnime() {
       ` : ""}
 
       ${completedSection(user)}
-      ${simpleSection("Plan to Watch", planned)}
-      ${simpleSection("Dropped", dropped)}
+      ${simpleSection("Plan to Watch", plannedAll)}
+      ${simpleSection("Dropped", droppedAll)}
       ${profileSection(user)}
     `;
 
@@ -1269,31 +1262,12 @@ async function loadAnime() {
 
     const search = document.querySelector("#anime-search-input");
 
-    search?.addEventListener("input", async (event) => {
+    search?.addEventListener("input", (event) => {
       completedSearch = event.target.value;
       completedPage = 1;
-
-      if (completedSearch.trim() && !completedFullyLoaded) {
-        search.disabled = true;
-        search.placeholder = "Loading all completed anime...";
-
-        try {
-          await ensureAllCompleted(firstCompleted);
-        } catch (error) {
-          console.warn(
-            "Could not load the full completed list:",
-            error
-          );
-        } finally {
-          search.disabled = false;
-          search.placeholder = "Search all completed anime...";
-        }
-      }
-
       renderCompleted();
     });
 
-    // Recent activity is delayed so it cannot slow or break the main page.
     window.setTimeout(async () => {
       const activities = await loadRecentActivity(user.id);
       mountRecentActivityButton(activities);
