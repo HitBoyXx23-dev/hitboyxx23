@@ -1507,8 +1507,8 @@ function animeModalContent(record) {
         ` : ""}
 
         ${aired ? `
-          <div class="detail-aired">
-            aired: ${escapeHtml(aired)}
+          <div style="margin-top:10px;">
+            ${detailBadge(`aired: ${aired}`)}
           </div>
         ` : ""}
 
