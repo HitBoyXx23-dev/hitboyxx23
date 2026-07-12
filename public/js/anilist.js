@@ -790,6 +790,7 @@ function statsBar(user) {
     [((Number(stats.minutesWatched) || 0) / 1440).toFixed(1), "Days Watched"],
     [(Number(stats.episodesWatched) || 0).toLocaleString(), "Episodes"],
     [(Number(stats.count) || 0).toLocaleString(), "Total Anime"],
+    [(Number(stats.meanScore) || 0).toFixed(1), "Mean Score"],
     [officialStatusCount(user, "COMPLETED").toLocaleString(), "Completed"],
     [officialStatusCount(user, "CURRENT").toLocaleString(), "Watching"],
     [officialStatusCount(user, "PAUSED").toLocaleString(), "Paused"],
@@ -928,12 +929,8 @@ function gridCard(entry) {
           alt="${escapeHtml(titleOf(media))}"
           loading="lazy"
         >
-        ${entry.score
-          ? `<div class="anime-grid-score-badge"><span>★</span> ${escapeHtml(entry.score)}</div>`
-          : ""
-        }
         ${entry.updatedAt
-          ? `<div class="anime-grid-date-badge" style="font-size:13px;">${escapeHtml(dateOf(entry.updatedAt))}</div>`
+          ? `<div class="anime-grid-date-badge" style="font-size:11px;">${escapeHtml(dateOf(entry.updatedAt))}</div>`
           : ""
         }
       </div>
@@ -1011,7 +1008,7 @@ function recentActivitySection(activities) {
                   alt="${escapeHtml(titleOf(media))}"
                   loading="lazy"
                 >
-                <div class="activity-date" style="font-size:13px;">
+                <div class="activity-date" style="font-size:11px;">
                   ${escapeHtml(dateOf(activity.createdAt))}
                 </div>
               </div>
@@ -1385,7 +1382,7 @@ function mountRecentActivityButton(activities) {
                 ? `<small class="recent-activity-meta">${escapeHtml(activityMediaMeta(media))}</small>`
                 : ""
               }
-              <time style="font-size:13px;">${escapeHtml(dateOf(activity.createdAt))}</time>
+              <time style="font-size:11px;">${escapeHtml(dateOf(activity.createdAt))}</time>
             </span>
           </a>
         `;
