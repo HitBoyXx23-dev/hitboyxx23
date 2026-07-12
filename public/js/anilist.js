@@ -1431,11 +1431,11 @@ function mountRecentActivityButton(activities) {
 }
 
 function detailBadge(text) {
-  return `<span style="background:#1c1c22;color:#c7c7ce;padding:4px 10px;border-radius:4px;font-size:12px;white-space:nowrap;border:1px solid #2a2a30;">${escapeHtml(text)}</span>`;
+  return `<span class="detail-badge">${escapeHtml(text)}</span>`;
 }
 
 function detailGenrePill(text) {
-  return `<span style="background:#4169e1;color:#f2f2f6;padding:4px 10px;border-radius:4px;font-size:12px;">${escapeHtml(text)}</span>`;
+  return `<span class="detail-genre-pill">${escapeHtml(text)}</span>`;
 }
 
 function animeModalContent(record) {
@@ -1471,38 +1471,38 @@ function animeModalContent(record) {
 
   return `
     <button
+      class="detail-close"
       data-close
       type="button"
       aria-label="Close"
-      style="position:absolute;top:16px;right:16px;background:none;border:none;color:#8a8a92;font-size:22px;line-height:1;cursor:pointer;"
     >×</button>
 
-    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+    <div class="detail-header">
       <img
+        class="detail-cover"
         src="${escapeHtml(media.coverImage?.large || "")}"
         alt="${escapeHtml(titleOf(media))}"
-        style="width:140px;border-radius:6px;flex-shrink:0;"
       >
 
-      <div style="flex:1;min-width:200px;">
-        <h2 style="margin:0 0 10px;font-size:22px;color:#f2f2f6;">
+      <div class="detail-info">
+        <h2 class="detail-title">
           ${escapeHtml(titleOf(media))}
         </h2>
 
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        <div class="detail-badges">
           ${badges.map(detailBadge).join("")}
         </div>
 
         ${media.averageScore ? `
-          <div style="margin-top:10px;font-size:14px;">
-            <span style="color:#f5c518;">★</span>
-            <strong style="color:#f2f2f6;">${(media.averageScore / 10).toFixed(1)}</strong>
-            <span style="color:#8a8a92;">(average)</span>
+          <div class="detail-score">
+            <span class="star">★</span>
+            <strong>${(media.averageScore / 10).toFixed(1)}</strong>
+            <span>(average)</span>
           </div>
         ` : ""}
 
         ${infoBadges.length ? `
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">
+          <div class="detail-badges" style="margin-top:10px;">
             ${infoBadges.map(detailBadge).join("")}
           </div>
         ` : ""}
@@ -1514,13 +1514,13 @@ function animeModalContent(record) {
         ` : ""}
 
         ${aired ? `
-          <div style="margin-top:10px;font-size:13px;color:#8a8a92;">
+          <div class="detail-aired">
             aired: ${escapeHtml(aired)}
           </div>
         ` : ""}
 
         ${genres.length ? `
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">
+          <div class="detail-badges" style="margin-top:10px;">
             ${genres.map(detailGenrePill).join("")}
           </div>
         ` : ""}
@@ -1528,33 +1528,32 @@ function animeModalContent(record) {
     </div>
 
     ${media.description ? `
-      <hr style="border:none;border-top:1px solid #2a2a30;margin:20px 0;">
-      <p style="font-size:14px;line-height:1.6;color:#c7c7ce;margin:0;">
+      <p class="detail-description">
         ${escapeHtml(stripDescription(media.description))}
       </p>
     ` : ""}
 
-    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+    <div class="detail-actions">
       <a
+        class="detail-btn detail-btn-primary"
         href="${escapeHtml(media.siteUrl || "#")}"
         target="_blank"
         rel="noopener noreferrer"
-        style="flex:1;min-width:120px;text-align:center;background:#4169e1;color:#fff;padding:10px 16px;border-radius:4px;font-weight:600;text-decoration:none;font-size:14px;"
       >view on anilist</a>
 
       ${trailer ? `
         <a
+          class="detail-btn detail-btn-primary"
           href="${escapeHtml(trailer)}"
           target="_blank"
           rel="noopener noreferrer"
-          style="flex:1;min-width:120px;text-align:center;background:#4169e1;color:#fff;padding:10px 16px;border-radius:4px;font-weight:600;text-decoration:none;font-size:14px;"
         >trailer</a>
       ` : ""}
 
       <button
+        class="detail-btn detail-btn-secondary"
         data-close
         type="button"
-        style="flex:0 0 auto;background:#1c1c22;color:#c7c7ce;padding:10px 16px;border-radius:4px;font-weight:600;border:1px solid #2a2a30;cursor:pointer;font-size:14px;"
       >close</button>
     </div>
   `;
@@ -1566,26 +1565,26 @@ function ensureAnimeModalMounted() {
 
   const backdrop = document.createElement("button");
   backdrop.id = "anime-detail-backdrop";
+  backdrop.className = "detail-backdrop";
   backdrop.type = "button";
   backdrop.setAttribute("aria-label", "Close anime details");
-  backdrop.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.75);border:none;padding:0;margin:0;cursor:pointer;z-index:998;display:none;";
   backdrop.addEventListener("click", closeAnimeModal);
 
   const modal = document.createElement("section");
   modal.id = "anime-detail-modal";
+  modal.className = "detail-modal";
   modal.setAttribute("role", "dialog");
   modal.setAttribute("aria-modal", "true");
-  modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:600px;max-height:88vh;overflow-y:auto;background:#121216;border:1px solid #2a2a30;border-radius:8px;padding:24px;z-index:999;display:none;color:#e6e6ec;box-shadow:0 20px 60px rgba(0,0,0,.5);";
 
   document.body.append(backdrop, modal);
 }
 
 function closeAnimeModal() {
   document.querySelector("#anime-detail-modal")
-    ?.style.setProperty("display", "none");
+    ?.classList.remove("open");
 
   document.querySelector("#anime-detail-backdrop")
-    ?.style.setProperty("display", "none");
+    ?.classList.remove("open");
 
   document.body.classList.remove("anime-detail-open");
 }
@@ -1606,8 +1605,8 @@ function openAnimeModal(id) {
     button.addEventListener("click", closeAnimeModal);
   });
 
-  modal.style.display = "block";
-  backdrop.style.display = "block";
+  modal.classList.add("open");
+  backdrop.classList.add("open");
   document.body.classList.add("anime-detail-open");
 }
 
@@ -1622,21 +1621,21 @@ function characterModalContent(character) {
 
   return `
     <button
+      class="detail-close"
       data-close
       type="button"
       aria-label="Close"
-      style="position:absolute;top:16px;right:16px;background:none;border:none;color:#8a8a92;font-size:22px;line-height:1;cursor:pointer;"
     >×</button>
 
-    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+    <div class="detail-header">
       <img
+        class="detail-cover"
         src="${escapeHtml(character.image?.large || "")}"
         alt="${escapeHtml(character.name?.full || "")}"
-        style="width:140px;border-radius:6px;flex-shrink:0;"
       >
 
-      <div style="flex:1;min-width:200px;">
-        <h2 style="margin:0 0 10px;font-size:22px;color:#f2f2f6;">
+      <div class="detail-info">
+        <h2 class="detail-title">
           ${escapeHtml(character.name?.full || "")}
         </h2>
 
@@ -1647,7 +1646,7 @@ function characterModalContent(character) {
         ` : ""}
 
         ${badges.length ? `
-          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          <div class="detail-badges">
             ${badges.map(detailBadge).join("")}
           </div>
         ` : ""}
@@ -1655,24 +1654,23 @@ function characterModalContent(character) {
     </div>
 
     ${character.description ? `
-      <hr style="border:none;border-top:1px solid #2a2a30;margin:20px 0;">
-      <p style="font-size:14px;line-height:1.6;color:#c7c7ce;margin:0;">
+      <p class="detail-description">
         ${formatCharacterDescription(character.description)}
       </p>
     ` : ""}
 
-    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+    <div class="detail-actions">
       <a
+        class="detail-btn detail-btn-primary"
         href="${escapeHtml(character.siteUrl || "#")}"
         target="_blank"
         rel="noopener noreferrer"
-        style="flex:1;min-width:120px;text-align:center;background:#4169e1;color:#fff;padding:10px 16px;border-radius:4px;font-weight:600;text-decoration:none;font-size:14px;"
       >view on anilist</a>
 
       <button
+        class="detail-btn detail-btn-secondary"
         data-close
         type="button"
-        style="flex:0 0 auto;background:#1c1c22;color:#c7c7ce;padding:10px 16px;border-radius:4px;font-weight:600;border:1px solid #2a2a30;cursor:pointer;font-size:14px;"
       >close</button>
     </div>
   `;
@@ -1684,26 +1682,26 @@ function ensureCharacterModalMounted() {
 
   const backdrop = document.createElement("button");
   backdrop.id = "character-detail-backdrop";
+  backdrop.className = "detail-backdrop";
   backdrop.type = "button";
   backdrop.setAttribute("aria-label", "Close character details");
-  backdrop.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.75);border:none;padding:0;margin:0;cursor:pointer;z-index:998;display:none;";
   backdrop.addEventListener("click", closeCharacterModal);
 
   const modal = document.createElement("section");
   modal.id = "character-detail-modal";
+  modal.className = "detail-modal";
   modal.setAttribute("role", "dialog");
   modal.setAttribute("aria-modal", "true");
-  modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:600px;max-height:88vh;overflow-y:auto;background:#121216;border:1px solid #2a2a30;border-radius:8px;padding:24px;z-index:999;display:none;color:#e6e6ec;box-shadow:0 20px 60px rgba(0,0,0,.5);";
 
   document.body.append(backdrop, modal);
 }
 
 function closeCharacterModal() {
   document.querySelector("#character-detail-modal")
-    ?.style.setProperty("display", "none");
+    ?.classList.remove("open");
 
   document.querySelector("#character-detail-backdrop")
-    ?.style.setProperty("display", "none");
+    ?.classList.remove("open");
 
   document.body.classList.remove("character-detail-open");
 }
@@ -1724,8 +1722,8 @@ function openCharacterModal(id) {
     button.addEventListener("click", closeCharacterModal);
   });
 
-  modal.style.display = "block";
-  backdrop.style.display = "block";
+  modal.classList.add("open");
+  backdrop.classList.add("open");
   document.body.classList.add("character-detail-open");
 }
 
