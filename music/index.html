@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#05060a">
+  <title>Music · HitBoyXx23</title>
+  <link rel="icon" href="../public/assets/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="../public/css/style.css">
+  <link rel="stylesheet" href="../public/css/components/spotify.css">
+  <script type="module" src="../public/js/spotify.js" defer></script>
+</head>
+<body>
+  <div class="back-to-home">
+    <button type="button" class="back-button" onclick="window.location.href='../'">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <path d="m15 18-6-6 6-6"></path>
+      </svg>
+      return home
+    </button>
+  </div>
+
+  
+  <main class="main">
+    <section class="section music-section">
+      <div class="container">
+        <div class="music-actions">
+          <a
+            class="music-action"
+            href="https://open.spotify.com/user/lbpo04lbjumec6hwg9ebfiik5?si=cd7ecf1930b04c96"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open Spotify Profile
+          </a>
+
+          <a
+            class="music-action"
+            href="https://spotify-connect-api.vercel.app/share/HitBoyXx23"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open Share Page
+          </a>
+        </div>
+
+        <div id="spotify-content">
+          <section class="spotify-section" id="now-playing-section">
+            <div class="spotify-section-heading">
+              <h2>now playing</h2>
+            </div>
+            <div id="spotify-now-playing">
+              <div class="spotify-empty">Checking what is playing...</div>
+            </div>
+          </section>
+
+          <section class="spotify-section" id="recent-section">
+            <div class="spotify-section-heading">
+              <h2>recently played</h2>
+            </div>
+            <div class="spotify-recent-list" id="spotify-recent">
+              <div class="spotify-empty">Loading recent tracks...</div>
+            </div>
+          </section>
+
+          <div class="spotify-fallback" id="spotify-fallback" hidden>
+            <p>Spotify activity is unavailable right now.</p>
+            <a
+              href="https://spotify-connect-api.vercel.app/share/HitBoyXx23"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open the share page
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+</body>
+</html>

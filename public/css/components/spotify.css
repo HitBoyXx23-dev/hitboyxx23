@@ -1,0 +1,365 @@
+
+.music-section {
+  padding-top: 88px;
+}
+
+.spotify-status {
+  margin-bottom: 22px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.spotify-status a {
+  color: var(--blue-bright);
+}
+
+.spotify-status-success {
+  border-color: rgba(82, 201, 140, .45);
+  color: #8ce3b7;
+}
+
+.spotify-status-error {
+  border-color: rgba(227, 106, 122, .45);
+  color: #ff9caa;
+}
+
+.spotify-section + .spotify-section {
+  margin-top: 32px;
+}
+
+.spotify-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.spotify-section-heading h2 {
+  margin: 0;
+  font-size: 16px;
+  text-transform: lowercase;
+}
+
+.spotify-section-heading a {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.spotify-section-heading a:hover {
+  color: var(--blue-bright);
+}
+
+.spotify-now-card,
+.spotify-recent-card,
+.spotify-empty {
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.spotify-now-card {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) minmax(0, 1fr);
+  gap: 22px;
+  padding: 18px;
+}
+
+.spotify-cover-link {
+  display: block;
+  min-width: 0;
+}
+
+.spotify-now-cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.spotify-now-info {
+  display: flex;
+  min-width: 0;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.spotify-playing-label {
+  color: var(--blue-bright);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+
+.spotify-track-title {
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--text);
+  font-size: clamp(24px, 4vw, 42px);
+  font-weight: 700;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spotify-track-title:hover,
+.spotify-recent-title:hover {
+  color: var(--blue-bright);
+}
+
+.spotify-track-artist {
+  margin-top: 7px;
+  color: #c5cada;
+  font-size: 15px;
+}
+
+.spotify-track-album {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.spotify-progress {
+  height: 4px;
+  margin-top: 24px;
+  background: #1d2331;
+}
+
+.spotify-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--blue), var(--purple));
+}
+
+.spotify-progress-times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.spotify-recent-list {
+  display: grid;
+  gap: 8px;
+}
+
+.spotify-recent-card {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px;
+  transition:
+    border-color .18s ease,
+    background .18s ease,
+    box-shadow .18s ease,
+    transform .18s ease;
+}
+
+.spotify-recent-card:hover,
+.spotify-now-card:hover {
+  border-color: var(--blue);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(65,105,225,.10),
+      rgba(125,74,199,.26)
+    );
+  box-shadow: 0 14px 34px rgba(52,30,96,.18);
+}
+
+.spotify-recent-card:hover {
+  transform: translateY(-2px);
+}
+
+.spotify-recent-cover {
+  display: block;
+  width: 58px;
+  height: 58px;
+  object-fit: cover;
+}
+
+.spotify-recent-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.spotify-recent-title {
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spotify-recent-info span,
+.spotify-recent-info small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spotify-open-button {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  background: #070910;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.spotify-open-button:hover {
+  border-color: var(--blue);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(65,105,225,.16),
+      rgba(125,74,199,.40)
+    );
+  color: var(--blue-bright);
+}
+
+.spotify-empty {
+  padding: 22px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.spotify-empty a {
+  margin-left: 5px;
+  color: var(--blue-bright);
+}
+
+@media (max-width: 700px) {
+  .music-section {
+    padding-top: 72px;
+  }
+
+  .spotify-now-card {
+    grid-template-columns: 1fr;
+  }
+
+  .spotify-now-cover {
+    max-width: 280px;
+  }
+
+  .spotify-track-title {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 480px) {
+  .spotify-recent-card {
+    grid-template-columns: 50px minmax(0, 1fr);
+  }
+
+  .spotify-recent-cover {
+    width: 50px;
+    height: 50px;
+  }
+
+  .spotify-open-button {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+
+.spotify-status[hidden] {
+  display: none !important;
+}
+
+.spotify-empty {
+  min-height: 92px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+
+.music-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 24px;
+}
+
+.music-action {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.music-action:hover {
+  color: var(--blue-bright);
+  transform: translateY(-1px);
+  text-shadow: 0 0 14px rgba(65,105,225,.35);
+}
+
+@media (max-width: 600px) {
+  .music-actions {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+}
+
+
+#now-playing-section[hidden],
+#recent-section[hidden],
+#spotify-fallback[hidden] {
+  display: none !important;
+}
+
+.spotify-fallback {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  text-align: center;
+}
+
+.spotify-fallback p {
+  margin: 0;
+}
+
+.spotify-fallback a {
+  color: var(--blue-bright);
+  font-size: 12px;
+}
+
+.spotify-fallback a:hover {
+  color: white;
+  text-shadow: 0 0 14px rgba(65,105,225,.35);
+}
+
+
+#now-playing-section,
+#recent-section {
+  display: block !important;
+}
+
+#now-playing-section[hidden],
+#recent-section[hidden] {
+  display: block !important;
+}
+
+#spotify-fallback {
+  display: none !important;
+}

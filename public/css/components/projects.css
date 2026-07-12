@@ -1,0 +1,107 @@
+
+.projects-section {
+  padding-top: 96px;
+}
+
+.work-links {
+  display: grid;
+  gap: 10px;
+}
+
+.work-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 94px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.work-card:hover {
+  border-color: var(--blue);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(65,105,225,.14),
+      rgba(125,74,199,.34)
+    );
+  box-shadow: 0 14px 34px rgba(52,30,96,.20);
+  transform: translateY(-2px);
+}
+
+.work-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid var(--border);
+  background: #070910;
+  color: var(--muted);
+}
+
+.work-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.work-card:hover .work-icon {
+  border-color: var(--blue);
+  color: var(--blue-bright);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(65,105,225,.18),
+      rgba(125,74,199,.38)
+    );
+  transform: scale(1.05);
+}
+
+.gitlab-icon {
+  color: #d47a45;
+}
+
+.work-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.work-copy strong {
+  font-size: 16px;
+}
+
+.work-card:hover .work-copy strong {
+  color: var(--blue-bright);
+}
+
+.work-copy small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.work-arrow {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.work-card:hover .work-arrow {
+  color: var(--blue-bright);
+  transform: translateX(3px);
+}
+
+@media (max-width: 700px) {
+  .projects-section {
+    padding-top: 76px;
+  }
+
+  .work-card {
+    grid-template-columns: 46px minmax(0,1fr);
+  }
+
+  .work-arrow {
+    grid-column: 2;
+  }
+}

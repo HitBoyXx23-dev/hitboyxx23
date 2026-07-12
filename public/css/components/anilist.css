@@ -1,0 +1,706 @@
+
+.anime-page {
+  background: var(--bg);
+}
+
+.anime-section {
+  padding: 84px 0 56px;
+}
+
+.anime-container {
+  width: min(calc(100% - 32px), 1580px);
+  max-width: none;
+}
+
+.creations-anilist {
+  display: flex;
+  flex-direction: column;
+  gap: 38px;
+}
+
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(105px, 1fr));
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  background: rgba(9,12,19,.94);
+}
+
+.stats-bar-item {
+  min-width: 105px;
+  padding: 14px 10px;
+  border-right: 1px solid var(--border);
+  text-align: center;
+}
+
+.stats-bar-item:last-child {
+  border-right: 0;
+}
+
+.stats-bar-value,
+.stats-bar-label {
+  display: block;
+}
+
+.stats-bar-value {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.stats-bar-label {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.section-header h4 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.section-count {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.anime-grid,
+.activity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  gap: 12px;
+}
+
+.anime-grid-item,
+.activity-card,
+.anime-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: rgba(9,12,19,.96);
+  transition:
+    border-color .18s ease,
+    box-shadow .18s ease,
+    transform .18s ease;
+}
+
+.anime-grid-item:hover,
+.activity-card:hover,
+.anime-card:hover {
+  border-color: var(--blue);
+  box-shadow: 0 16px 36px rgba(62,29,112,.28);
+  transform: translateY(-4px);
+}
+
+.anime-grid-cover,
+.activity-cover,
+.anime-card-cover {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 2 / 3;
+  background: #0d1118;
+}
+
+.anime-grid-cover img,
+.activity-cover img,
+.anime-card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .25s ease;
+}
+
+.anime-grid-item:hover img,
+.activity-card:hover img,
+.anime-card:hover img {
+  transform: scale(1.035);
+}
+
+.anime-grid-info,
+.activity-info,
+.anime-card-info {
+  min-height: 68px;
+  padding: 9px;
+}
+
+.anime-grid-title,
+.activity-title,
+.anime-card-title {
+  display: -webkit-box;
+  overflow: hidden;
+  min-height: 36px;
+  font-size: 12px;
+  font-weight: 700;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.anime-grid-meta,
+.activity-meta,
+.anime-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.anime-grid-score-badge,
+.anime-grid-date-badge,
+.activity-date {
+  position: absolute;
+  top: 7px;
+  padding: 3px 6px;
+  background: rgba(5,6,10,.88);
+  font-size: 9px;
+}
+
+.anime-grid-score-badge {
+  left: 7px;
+}
+
+.anime-grid-date-badge,
+.activity-date {
+  right: 7px;
+}
+
+.character-grid {
+  grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+}
+
+.character-grid .anime-grid-cover {
+  aspect-ratio: 3 / 4;
+}
+
+.anime-carousel {
+  display: grid;
+  grid-auto-columns: clamp(155px, 12vw, 190px);
+  grid-auto-flow: column;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  scroll-behavior: smooth;
+}
+
+.anime-card-overlay {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 9px;
+  background: linear-gradient(transparent, rgba(5,6,10,.96));
+}
+
+.anime-card-progress {
+  height: 3px;
+  margin-bottom: 6px;
+  background: rgba(255,255,255,.15);
+}
+
+.anime-card-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--blue), var(--purple));
+}
+
+.anime-card-episodes {
+  font-size: 10px;
+}
+
+.star {
+  color: #f1bf4f;
+}
+
+.anime-search {
+  width: min(420px, 100%);
+  margin-bottom: 14px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(125,74,199,.18);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.pagination-btn {
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  background: #070910;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  border-color: var(--blue);
+  background: linear-gradient(135deg, rgba(65,105,225,.16), rgba(125,74,199,.38));
+  color: var(--blue-bright);
+}
+
+.pagination-btn:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.pagination-info {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--border);
+  background: rgba(9,12,19,.96);
+}
+
+.profile-stat {
+  display: flex;
+  flex-direction: column;
+  padding: 13px;
+  border-right: 1px solid var(--border);
+}
+
+.profile-stat:last-child {
+  border-right: 0;
+}
+
+.profile-label {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.profile-value {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.profile-link {
+  color: var(--blue-bright);
+}
+
+@media (max-width: 700px) {
+  .anime-section {
+    padding-top: 72px;
+  }
+
+  .anime-container {
+    width: min(calc(100% - 18px), 1580px);
+  }
+
+  .creations-anilist {
+    gap: 28px;
+  }
+
+  .anime-grid,
+  .activity-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .character-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-stat {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .profile-stat:last-child {
+    border-bottom: 0;
+  }
+}
+
+
+
+
+
+.recent-activity-section {
+  margin: 0;
+}
+
+.activity-grid {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.activity-card {
+  min-width: 0;
+}
+
+.activity-status {
+  color: var(--blue-bright);
+  font-weight: 700;
+}
+
+@media (max-width: 700px) {
+  .activity-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+.recent-activity-section {
+  margin: 0;
+}
+
+.activity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  gap: 12px;
+}
+
+.activity-status {
+  color: var(--blue-bright);
+  font-weight: 700;
+}
+
+@media (max-width: 700px) {
+  .activity-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+.anime-list-note {
+  margin: -4px 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+
+
+.anime-list-note {
+  margin: -4px 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.recent-activity-button {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 170;
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border: 1px solid #353a49;
+  border-radius: 50%;
+  background: rgba(8,10,16,.96);
+  color: #f4f6ff;
+  cursor: pointer;
+  box-shadow: 0 14px 36px rgba(0,0,0,.38);
+  transition:
+    transform .18s ease,
+    border-color .18s ease,
+    background .18s ease,
+    box-shadow .18s ease;
+}
+
+.recent-activity-button svg {
+  width: 25px;
+  height: 25px;
+}
+
+.recent-activity-button > span {
+  position: absolute;
+  top: -5px;
+  right: -4px;
+  display: grid;
+  min-width: 23px;
+  height: 23px;
+  padding: 0 5px;
+  place-items: center;
+  border: 2px solid var(--bg);
+  border-radius: 999px;
+  background: var(--purple);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.recent-activity-button:hover,
+.recent-activity-button[aria-expanded="true"] {
+  border-color: var(--blue);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(65,105,225,.24),
+      rgba(125,74,199,.46)
+    );
+  box-shadow:
+    0 0 0 1px rgba(125,74,199,.12),
+    0 18px 44px rgba(55,30,100,.38);
+  transform: translateY(-3px);
+}
+
+.recent-activity-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  visibility: hidden;
+  border: 0;
+  background: rgba(0,0,0,.72);
+  opacity: 0;
+  cursor: default;
+  backdrop-filter: blur(1px);
+  transition: opacity .18s ease, visibility .18s ease;
+}
+
+.recent-activity-backdrop.open {
+  visibility: visible;
+  opacity: 1;
+}
+
+.recent-activity-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 160;
+  display: flex;
+  width: min(450px, calc(100% - 32px));
+  max-height: min(680px, calc(100vh - 72px));
+  overflow: hidden;
+  border: 1px solid #30333d;
+  background: #0d0f13;
+  box-shadow: 0 28px 80px rgba(0,0,0,.58);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -48%) scale(.97);
+  transition:
+    opacity .18s ease,
+    transform .18s ease;
+  flex-direction: column;
+}
+
+.recent-activity-modal.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.recent-activity-modal-header {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #292d36;
+  background: #0f1116;
+}
+
+.recent-activity-modal-header span {
+  color: var(--blue-bright);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+}
+
+.recent-activity-modal-header h2 {
+  margin: 2px 0 0;
+  font-size: 16px;
+  letter-spacing: .02em;
+}
+
+.recent-activity-close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.recent-activity-close:hover {
+  color: #fff;
+  transform: rotate(4deg);
+}
+
+.recent-activity-modal-list {
+  overflow-y: auto;
+  scrollbar-color: #727782 #151820;
+  scrollbar-width: thin;
+}
+
+.recent-activity-modal-list::-webkit-scrollbar {
+  width: 9px;
+}
+
+.recent-activity-modal-list::-webkit-scrollbar-track {
+  background: #151820;
+}
+
+.recent-activity-modal-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #737883;
+}
+
+.recent-activity-modal-item {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 72px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #272b33;
+  background: #0d0f13;
+}
+
+.recent-activity-modal-item:last-child {
+  border-bottom: 0;
+}
+
+.recent-activity-modal-item:hover {
+  background:
+    linear-gradient(
+      135deg,
+      rgba(65,105,225,.08),
+      rgba(125,74,199,.18)
+    );
+}
+
+.recent-activity-modal-item img {
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
+}
+
+.recent-activity-modal-item > span {
+  display: flex;
+  min-width: 0;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.recent-activity-modal-item strong {
+  overflow: hidden;
+  color: #f5f6fb;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-activity-modal-item small:first-of-type {
+  color: #b66fe3;
+  font-weight: 700;
+}
+
+.recent-activity-modal-item small,
+.recent-activity-modal-item time {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+body.recent-activity-open {
+  overflow: hidden;
+}
+
+@media (max-width: 650px) {
+  .recent-activity-button {
+    right: 14px;
+    bottom: 14px;
+    width: 54px;
+    height: 54px;
+  }
+
+  .recent-activity-modal {
+    width: calc(100% - 18px);
+    max-height: calc(100vh - 34px);
+  }
+}
+
+
+/* v40 tweaks */
+.anilist-profile,
+.anime-profile,
+.profile-avatar,
+.profile-image,
+.hero-pfp,
+.anilist-header img:first-child{
+  display:none !important;
+}
+
+/* Royal blue scrollbars */
+*{
+  scrollbar-color:#4169E1 #0b0d12;
+  scrollbar-width:thin;
+}
+*::-webkit-scrollbar{
+  width:10px;
+  height:10px;
+}
+*::-webkit-scrollbar-track{
+  background:#0b0d12;
+}
+*::-webkit-scrollbar-thumb{
+  background:#4169E1;
+  border-radius:999px;
+}
+*::-webkit-scrollbar-thumb:hover{
+  background:#5d82ff;
+}
+
+
+/* Anime page uses no personal profile image or profile background. */
+.anime-page .hero-pfp,
+.anime-page .profile-avatar,
+.anime-page .profile-image,
+.anime-page .anilist-profile img,
+.anime-page .anime-profile img {
+  display: none !important;
+}
+
+
+.recent-activity-copy {
+  display: flex;
+  min-width: 0;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.recent-activity-primary {
+  margin-top: 2px;
+  color: #b66fe3 !important;
+  font-weight: 700;
+}
+
+.recent-activity-meta {
+  margin-top: 1px;
+  color: var(--blue-bright) !important;
+}
+
+.recent-activity-modal-item time {
+  margin-top: 2px;
+  color: var(--muted);
+}
