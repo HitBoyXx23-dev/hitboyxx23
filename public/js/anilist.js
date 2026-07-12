@@ -15,7 +15,9 @@ let completedPage = 1;
 let completedSearch = "";
 let lastRequestAt = 0;
 let animeModalMounted = false;
+let characterModalMounted = false;
 const mediaLookup = new Map();
+const characterLookup = new Map();
 
 const profileQuery = `
 query AnimeProfile($name: String!) {
@@ -42,10 +44,19 @@ query AnimeProfile($name: String!) {
           id
           name {
             full
+            native
+            alternative
           }
           image {
             large
           }
+          description
+          dateOfBirth {
+            month
+            day
+          }
+          age
+          gender
           siteUrl
         }
       }
@@ -707,6 +718,52 @@ function trailerUrl(media) {
   return "";
 }
 
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+];
+
+function formatBirthday(dateOfBirth) {
+  if (!dateOfBirth?.month || !dateOfBirth?.day) return "";
+  return `${MONTH_NAMES[dateOfBirth.month - 1]} ${dateOfBirth.day}`;
+}
+
+function alternateNamesOf(character) {
+  return [
+    character?.name?.native,
+    ...(character?.name?.alternative || [])
+  ].filter(Boolean).join(", ");
+}
+
+function formatCharacterDescription(raw) {
+  const links = [];
+
+  const withPlaceholders = String(raw || "")
+    .replace(/~!([\s\S]*?)!~/g, "$1")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
+      const token = `@@LINK${links.length}@@`;
+
+      links.push(
+        `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color:#7fa3ff;text-decoration:underline;">${escapeHtml(label)}</a>`
+      );
+
+      return token;
+    });
+
+  let html = escapeHtml(withPlaceholders)
+    .replace(/&lt;br\s*\/?&gt;/gi, "<br>")
+    .replace(/\*\*([\s\S]*?)\*\*/g, "$1")
+    .replace(/__([\s\S]*?)__/g, "$1")
+    .replace(/(\r?\n){2,}/g, "<br><br>")
+    .replace(/\r?\n/g, " ");
+
+  links.forEach((linkHtml, index) => {
+    html = html.replace(`@@LINK${index}@@`, linkHtml);
+  });
+
+  return html;
+}
+
 function officialStatusCount(user, status) {
   const statuses = user?.statistics?.anime?.statuses || [];
   return Number(
@@ -756,6 +813,12 @@ function statsBar(user) {
 function characterSection(characters) {
   if (!characters.length) return "";
 
+  characters.forEach((character) => {
+    if (character?.id) {
+      characterLookup.set(String(character.id), character);
+    }
+  });
+
   return `
     <section>
       ${sectionHeader("Favorite Characters", characters.length)}
@@ -764,6 +827,7 @@ function characterSection(characters) {
           <a
             class="anime-grid-item"
             href="${escapeHtml(character.siteUrl || "#")}"
+            data-character-id="${escapeHtml(character?.id ?? "")}"
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -1370,11 +1434,11 @@ function mountRecentActivityButton(activities) {
 }
 
 function detailBadge(text) {
-  return `<span style="background:#212127;color:#c7c7ce;padding:4px 10px;border-radius:6px;font-size:12px;white-space:nowrap;">${escapeHtml(text)}</span>`;
+  return `<span style="background:#1c1c22;color:#c7c7ce;padding:4px 10px;border-radius:4px;font-size:12px;white-space:nowrap;border:1px solid #2a2a30;">${escapeHtml(text)}</span>`;
 }
 
 function detailGenrePill(text) {
-  return `<span style="background:#5b3aa0;color:#f2eeff;padding:4px 10px;border-radius:6px;font-size:12px;">${escapeHtml(text)}</span>`;
+  return `<span style="background:#4169e1;color:#f2f2f6;padding:4px 10px;border-radius:4px;font-size:12px;">${escapeHtml(text)}</span>`;
 }
 
 function animeModalContent(record) {
@@ -1420,7 +1484,7 @@ function animeModalContent(record) {
       <img
         src="${escapeHtml(media.coverImage?.large || "")}"
         alt="${escapeHtml(titleOf(media))}"
-        style="width:140px;border-radius:8px;flex-shrink:0;"
+        style="width:140px;border-radius:6px;flex-shrink:0;"
       >
 
       <div style="flex:1;min-width:200px;">
@@ -1478,7 +1542,7 @@ function animeModalContent(record) {
         href="${escapeHtml(media.siteUrl || "#")}"
         target="_blank"
         rel="noopener noreferrer"
-        style="flex:1;min-width:120px;text-align:center;background:#7c4de0;color:#fff;padding:10px 16px;border-radius:8px;font-weight:600;text-decoration:none;font-size:14px;"
+        style="flex:1;min-width:120px;text-align:center;background:#4169e1;color:#fff;padding:10px 16px;border-radius:4px;font-weight:600;text-decoration:none;font-size:14px;"
       >view on anilist</a>
 
       ${trailer ? `
@@ -1486,14 +1550,14 @@ function animeModalContent(record) {
           href="${escapeHtml(trailer)}"
           target="_blank"
           rel="noopener noreferrer"
-          style="flex:1;min-width:120px;text-align:center;background:#7c4de0;color:#fff;padding:10px 16px;border-radius:8px;font-weight:600;text-decoration:none;font-size:14px;"
+          style="flex:1;min-width:120px;text-align:center;background:#4169e1;color:#fff;padding:10px 16px;border-radius:4px;font-weight:600;text-decoration:none;font-size:14px;"
         >trailer</a>
       ` : ""}
 
       <button
         data-close
         type="button"
-        style="flex:0 0 auto;background:#212127;color:#c7c7ce;padding:10px 16px;border-radius:8px;font-weight:600;border:none;cursor:pointer;font-size:14px;"
+        style="flex:0 0 auto;background:#1c1c22;color:#c7c7ce;padding:10px 16px;border-radius:4px;font-weight:600;border:1px solid #2a2a30;cursor:pointer;font-size:14px;"
       >close</button>
     </div>
   `;
@@ -1514,7 +1578,7 @@ function ensureAnimeModalMounted() {
   modal.id = "anime-detail-modal";
   modal.setAttribute("role", "dialog");
   modal.setAttribute("aria-modal", "true");
-  modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:600px;max-height:88vh;overflow-y:auto;background:#121216;border:1px solid #2a2a30;border-radius:14px;padding:24px;z-index:999;display:none;color:#e6e6ec;box-shadow:0 20px 60px rgba(0,0,0,.5);";
+  modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:600px;max-height:88vh;overflow-y:auto;background:#121216;border:1px solid #2a2a30;border-radius:8px;padding:24px;z-index:999;display:none;color:#e6e6ec;box-shadow:0 20px 60px rgba(0,0,0,.5);";
 
   document.body.append(backdrop, modal);
 }
@@ -1550,7 +1614,136 @@ function openAnimeModal(id) {
   document.body.classList.add("anime-detail-open");
 }
 
+function characterModalContent(character) {
+  const badges = [
+    formatBirthday(character.dateOfBirth) ? `birthday: ${formatBirthday(character.dateOfBirth)}` : "",
+    character.age ? `initial age: ${character.age}` : "",
+    character.gender ? `gender: ${character.gender}` : ""
+  ].filter(Boolean);
+
+  const alternateNames = alternateNamesOf(character);
+
+  return `
+    <button
+      data-close
+      type="button"
+      aria-label="Close"
+      style="position:absolute;top:16px;right:16px;background:none;border:none;color:#8a8a92;font-size:22px;line-height:1;cursor:pointer;"
+    >×</button>
+
+    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+      <img
+        src="${escapeHtml(character.image?.large || "")}"
+        alt="${escapeHtml(character.name?.full || "")}"
+        style="width:140px;border-radius:6px;flex-shrink:0;"
+      >
+
+      <div style="flex:1;min-width:200px;">
+        <h2 style="margin:0 0 10px;font-size:22px;color:#f2f2f6;">
+          ${escapeHtml(character.name?.full || "")}
+        </h2>
+
+        ${alternateNames ? `
+          <div style="margin-bottom:10px;">
+            ${detailBadge(alternateNames)}
+          </div>
+        ` : ""}
+
+        ${badges.length ? `
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${badges.map(detailBadge).join("")}
+          </div>
+        ` : ""}
+      </div>
+    </div>
+
+    ${character.description ? `
+      <hr style="border:none;border-top:1px solid #2a2a30;margin:20px 0;">
+      <p style="font-size:14px;line-height:1.6;color:#c7c7ce;margin:0;">
+        ${formatCharacterDescription(character.description)}
+      </p>
+    ` : ""}
+
+    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+      <a
+        href="${escapeHtml(character.siteUrl || "#")}"
+        target="_blank"
+        rel="noopener noreferrer"
+        style="flex:1;min-width:120px;text-align:center;background:#4169e1;color:#fff;padding:10px 16px;border-radius:4px;font-weight:600;text-decoration:none;font-size:14px;"
+      >view on anilist</a>
+
+      <button
+        data-close
+        type="button"
+        style="flex:0 0 auto;background:#1c1c22;color:#c7c7ce;padding:10px 16px;border-radius:4px;font-weight:600;border:1px solid #2a2a30;cursor:pointer;font-size:14px;"
+      >close</button>
+    </div>
+  `;
+}
+
+function ensureCharacterModalMounted() {
+  if (characterModalMounted) return;
+  characterModalMounted = true;
+
+  const backdrop = document.createElement("button");
+  backdrop.id = "character-detail-backdrop";
+  backdrop.type = "button";
+  backdrop.setAttribute("aria-label", "Close character details");
+  backdrop.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.75);border:none;padding:0;margin:0;cursor:pointer;z-index:998;display:none;";
+  backdrop.addEventListener("click", closeCharacterModal);
+
+  const modal = document.createElement("section");
+  modal.id = "character-detail-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:600px;max-height:88vh;overflow-y:auto;background:#121216;border:1px solid #2a2a30;border-radius:8px;padding:24px;z-index:999;display:none;color:#e6e6ec;box-shadow:0 20px 60px rgba(0,0,0,.5);";
+
+  document.body.append(backdrop, modal);
+}
+
+function closeCharacterModal() {
+  document.querySelector("#character-detail-modal")
+    ?.style.setProperty("display", "none");
+
+  document.querySelector("#character-detail-backdrop")
+    ?.style.setProperty("display", "none");
+
+  document.body.classList.remove("character-detail-open");
+}
+
+function openCharacterModal(id) {
+  const character = characterLookup.get(String(id));
+  if (!character) return;
+
+  ensureCharacterModalMounted();
+
+  const modal = document.querySelector("#character-detail-modal");
+  const backdrop = document.querySelector("#character-detail-backdrop");
+  if (!modal || !backdrop) return;
+
+  modal.innerHTML = characterModalContent(character);
+
+  modal.querySelectorAll("[data-close]").forEach((button) => {
+    button.addEventListener("click", closeCharacterModal);
+  });
+
+  modal.style.display = "block";
+  backdrop.style.display = "block";
+  document.body.classList.add("character-detail-open");
+}
+
 document.addEventListener("click", (event) => {
+  const characterTrigger = event.target.closest("[data-character-id]");
+
+  if (characterTrigger && root?.contains(characterTrigger)) {
+    const id = characterTrigger.dataset.characterId;
+    if (!id) return;
+
+    event.preventDefault();
+    openCharacterModal(id);
+    return;
+  }
+
   const trigger = event.target.closest("[data-media-id]");
   if (!trigger) return;
   if (!root?.contains(trigger)) return;
@@ -1566,6 +1759,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeRecentActivityModal();
     closeAnimeModal();
+    closeCharacterModal();
   }
 });
 
