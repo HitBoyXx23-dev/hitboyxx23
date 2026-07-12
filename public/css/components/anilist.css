@@ -81,7 +81,6 @@
 .anime-grid-item,
 .activity-card,
 .anime-card {
-  overflow: hidden;
   border: 1px solid var(--border);
   background: rgba(9,12,19,.96);
   transition:
