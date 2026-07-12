@@ -1627,7 +1627,7 @@ function characterModalContent(character) {
 
         ${alternateNames ? `
           <div style="margin-bottom:10px;">
-            ${detailBadge(alternateNames)}
+            <span class="detail-badge-wrap">${escapeHtml(alternateNames)}</span>
           </div>
         ` : ""}
 
