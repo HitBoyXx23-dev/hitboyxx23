@@ -19,7 +19,7 @@
 
 .stats-bar {
   display: grid;
-  grid-template-columns: repeat(10, minmax(105px, 1fr));
+  grid-template-columns: repeat(9, minmax(105px, 1fr));
   overflow-x: auto;
   border: 1px solid var(--border);
   background: rgba(9,12,19,.94);
