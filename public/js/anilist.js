@@ -789,14 +789,13 @@ function statsBar(user) {
   const values = [
     [((Number(stats.minutesWatched) || 0) / 1440).toFixed(1), "Days Watched"],
     [(Number(stats.episodesWatched) || 0).toLocaleString(), "Episodes"],
-    [(Number(stats.count) || 0).toLocaleString(), "Total Anime"],
+    [(Number(stats.count) || 0).toLocaleString(), "Total"],
     [(Number(stats.meanScore) || 0).toFixed(1), "Mean Score"],
     [officialStatusCount(user, "COMPLETED").toLocaleString(), "Completed"],
     [officialStatusCount(user, "CURRENT").toLocaleString(), "Watching"],
-    [officialStatusCount(user, "PAUSED").toLocaleString(), "Paused"],
+    [officialStatusCount(user, "PAUSED").toLocaleString(), "On Hold"],
     [officialStatusCount(user, "DROPPED").toLocaleString(), "Dropped"],
-    [officialStatusCount(user, "PLANNING").toLocaleString(), "Planning"],
-    [officialStatusCount(user, "REPEATING").toLocaleString(), "Rewatching"]
+    [officialStatusCount(user, "PLANNING").toLocaleString(), "Plan to Watch"]
   ];
 
   return `
@@ -954,9 +953,8 @@ function activityLabel(activity) {
   if (status.includes("completed")) return "Completed";
   if (status.includes("watched episode")) return "Watching";
   if (status.includes("dropped")) return "Dropped";
-  if (status.includes("paused")) return "Paused";
-  if (status.includes("plans to watch")) return "Planning";
-  if (status.includes("rewatched")) return "Rewatching";
+  if (status.includes("paused")) return "On Hold";
+  if (status.includes("plans to watch")) return "Plan to Watch";
 
   return activity?.status || "Updated";
 }
@@ -1205,15 +1203,11 @@ function activityEpisodeText(activity) {
   }
 
   if (/paused/i.test(rawStatus)) {
-    return progress ? `Paused at ${progress}` : "Paused";
+    return progress ? `On Hold at ${progress}` : "On Hold";
   }
 
   if (/plans to watch/i.test(rawStatus)) {
     return "Added to Plan to Watch";
-  }
-
-  if (/rewatched/i.test(rawStatus)) {
-    return progress ? `Rewatched ${progress}` : "Rewatching";
   }
 
   if (/watched episode/i.test(rawStatus)) {
@@ -1280,9 +1274,8 @@ function recentActivityStatus(activity) {
   if (status.includes("completed")) return "Completed";
   if (status.includes("watched episode")) return "Watching";
   if (status.includes("dropped")) return "Dropped";
-  if (status.includes("paused")) return "Paused";
-  if (status.includes("plans to watch")) return "Planning";
-  if (status.includes("rewatched")) return "Rewatching";
+  if (status.includes("paused")) return "On Hold";
+  if (status.includes("plans to watch")) return "Plan to Watch";
 
   return activity?.status || "Updated";
 }
