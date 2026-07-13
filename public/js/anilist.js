@@ -68,6 +68,9 @@ query AnimeProfile($name: String!) {
 const dashboardQuery = `
 query AnimeDashboard($name: String!) {
   current: Page(page: 1, perPage: 50) {
+    pageInfo {
+      hasNextPage
+    }
     mediaList(
       userName: $name
       type: ANIME
@@ -237,6 +240,9 @@ query AnimeDashboard($name: String!) {
   }
 
   paused: Page(page: 1, perPage: 50) {
+    pageInfo {
+      hasNextPage
+    }
     mediaList(
       userName: $name
       type: ANIME
@@ -783,7 +789,7 @@ function sectionHeader(title, count = "") {
   `;
 }
 
-function statsBar(user) {
+function statsBar(user, currentCount = 0) {
   const stats = user?.statistics?.anime || {};
 
   const values = [
@@ -792,7 +798,7 @@ function statsBar(user) {
     [(Number(stats.count) || 0).toLocaleString(), "Total"],
     [(Number(stats.meanScore) || 0).toFixed(1), "Mean Score"],
     [officialStatusCount(user, "COMPLETED").toLocaleString(), "Completed"],
-    [officialStatusCount(user, "CURRENT").toLocaleString(), "Watching"],
+    [(Number(currentCount) || 0).toLocaleString(), "Currently Watching"],
     [officialStatusCount(user, "PAUSED").toLocaleString(), "On Hold"],
     [officialStatusCount(user, "DROPPED").toLocaleString(), "Dropped"],
     [officialStatusCount(user, "PLANNING").toLocaleString(), "Plan to Watch"]
@@ -1737,6 +1743,30 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+async function loadCurrent(firstPage) {
+  const all = [...(firstPage?.mediaList || [])];
+  let page = 2;
+  let hasNextPage = Boolean(firstPage?.pageInfo?.hasNextPage);
+
+  while (hasNextPage && page <= 20) {
+    const result = await loadListPage("CURRENT", page);
+    all.push(...(result.mediaList || []));
+    hasNextPage = Boolean(result.pageInfo?.hasNextPage);
+    page += 1;
+  }
+
+  const unique = new Map();
+
+  for (const entry of all) {
+    const id = entry?.media?.id;
+    if (id && !unique.has(id)) {
+      unique.set(id, entry);
+    }
+  }
+
+  return [...unique.values()];
+}
+
 async function loadAnime() {
   if (!root) return;
 
@@ -1758,7 +1788,10 @@ async function loadAnime() {
       );
     }
 
-    const current = dashboard.current?.mediaList || [];
+    const firstCurrent = dashboard.current || {
+      mediaList: [],
+      pageInfo: { hasNextPage: false }
+    };
 
     const firstCompleted = dashboard.completed || {
       mediaList: [],
@@ -1775,16 +1808,21 @@ async function loadAnime() {
       pageInfo: { hasNextPage: false }
     };
 
-    [completedAll, plannedAll, droppedAll] = await Promise.all([
+    const [current, completed, planned, dropped] = await Promise.all([
+      loadCurrent(firstCurrent),
       loadAllForStatus("COMPLETED", firstCompleted),
       loadAllForStatus("PLANNING", firstPlanned),
       loadAllForStatus("DROPPED", firstDropped)
     ]);
 
+    completedAll = completed;
+    plannedAll = planned;
+    droppedAll = dropped;
+
     const characters = user.favourites?.characters?.nodes || [];
 
     root.innerHTML = `
-      ${statsBar(user)}
+      ${statsBar(user, current.length)}
       ${characterSection(characters)}
 
       ${current.length ? `
