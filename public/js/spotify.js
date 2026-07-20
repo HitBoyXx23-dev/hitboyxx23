@@ -1,6 +1,6 @@
 const TOKEN_ENDPOINT = "https://spotify-api-mocha-nine.vercel.app/api/spotify-token";
 const SPOTIFY_API_BASE = "https://api.spotify.com/v1";
-const REFRESH_INTERVAL = 1000;
+const REFRESH_INTERVAL = 5000;
 const CACHE_TTL = 30 * 60 * 1000;
 
 const PROFILE_FALLBACK = new URL(
@@ -13,6 +13,7 @@ let progressTimer = null;
 let refreshRunning = false;
 let cachedToken = null;
 let cachedTokenExpiry = 0;
+
 let currentProgress = 0;
 let currentDuration = 0;
 let currentPlaying = false;
@@ -28,6 +29,8 @@ function escapeHtml(value) {
 
 function getElements() {
   return {
+    nowSection: document.querySelector("#now-playing-section"),
+    recentSection: document.querySelector("#recent-section"),
     nowRoot: document.querySelector("#spotify-now-playing"),
     recentRoot: document.querySelector("#spotify-recent"),
     fallback: document.querySelector("#spotify-fallback")
@@ -101,9 +104,14 @@ async function getAccessToken(forceRefresh = false) {
     cache: "no-store"
   });
 
+  if (!response.ok) {
+    throw new Error("Spotify token failed");
+  }
+
   const data = await response.json();
 
   cachedToken = data.access_token;
+
   cachedTokenExpiry =
     Date.now() + ((Number(data.expires_in) || 3600) - 30) * 1000;
 
@@ -133,13 +141,21 @@ async function spotifyFetch(endpoint) {
     });
   }
 
-  if (response.status === 204) return null;
+  if (response.status === 204) {
+    return null;
+  }
 
-  return response.json();
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message || "Spotify request failed");
+  }
+
+  return data;
 }
 
-function updateProgressBar() {
-  if (!currentPlaying) return;
+function updateProgress() {
+  if (!currentPlaying || !currentDuration) return;
 
   currentProgress += 1000;
 
@@ -147,17 +163,17 @@ function updateProgressBar() {
     currentProgress = currentDuration;
   }
 
-  const time = document.querySelector("#spotify-time");
   const bar = document.querySelector("#spotify-progress-bar");
+  const time = document.querySelector("#spotify-time");
+
+  if (bar) {
+    bar.style.width =
+      `${(currentProgress / currentDuration) * 100}%`;
+  }
 
   if (time) {
     time.textContent =
       `${formatTime(currentProgress)} / ${formatTime(currentDuration)}`;
-  }
-
-  if (bar && currentDuration) {
-    bar.style.width =
-      `${(currentProgress / currentDuration) * 100}%`;
   }
 }
 
@@ -183,10 +199,14 @@ function renderNowPlaying(data, elements) {
   elements.nowRoot.innerHTML = `
     <article class="spotify-now-card">
       <img class="spotify-now-cover" src="${escapeHtml(cover(track))}" alt="">
+
       <div>
-        <span>${data.is_playing ? "currently playing" : "paused"}</span>
+        <span>${currentPlaying ? "currently playing" : "paused"}</span>
+
         <h3>${escapeHtml(track.name)}</h3>
+
         <p>${escapeHtml(artists(track))}</p>
+
         <small>${escapeHtml(track.album?.name || "")}</small>
 
         <div class="spotify-progress">
@@ -206,12 +226,19 @@ function renderRecent(data, elements) {
 
   const tracks = data?.items || [];
 
+  if (!tracks.length) {
+    elements.recentRoot.innerHTML =
+      "<div class='spotify-empty'>No recent tracks.</div>";
+    return;
+  }
+
   elements.recentRoot.innerHTML = tracks.map((item) => {
     const track = item.track;
 
     return `
       <article class="spotify-recent-card">
         <img src="${escapeHtml(cover(track))}" alt="">
+
         <div>
           <strong>${escapeHtml(track.name)}</strong>
           <span>${escapeHtml(artists(track))}</span>
@@ -250,8 +277,15 @@ async function refreshSpotify() {
 }
 
 function stopSpotify() {
-  clearInterval(refreshTimer);
-  clearInterval(progressTimer);
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+
+  if (progressTimer) {
+    clearInterval(progressTimer);
+    progressTimer = null;
+  }
 }
 
 function startSpotify() {
@@ -259,11 +293,24 @@ function startSpotify() {
 
   refreshSpotify();
 
-  refreshTimer = setInterval(refreshSpotify, REFRESH_INTERVAL);
-  progressTimer = setInterval(updateProgressBar, 1000);
+  refreshTimer = setInterval(
+    refreshSpotify,
+    REFRESH_INTERVAL
+  );
+
+  progressTimer = setInterval(
+    updateProgress,
+    1000
+  );
 }
 
 function initializeSpotify() {
+  const elements = getElements();
+
+  if (!elements.nowRoot && !elements.recentRoot) {
+    return;
+  }
+
   startSpotify();
 
   document.addEventListener("visibilitychange", () => {
@@ -274,9 +321,11 @@ function initializeSpotify() {
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initializeSpotify, {
-    once: true
-  });
+  document.addEventListener(
+    "DOMContentLoaded",
+    initializeSpotify,
+    { once: true }
+  );
 } else {
   initializeSpotify();
 }
