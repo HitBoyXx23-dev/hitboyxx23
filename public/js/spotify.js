@@ -53,12 +53,8 @@ function trackUrl(track) {
   return track?.external_urls?.spotify || "https://open.spotify.com";
 }
 
-function formatTime(milliseconds) {
-  const seconds = Math.max(
-    0,
-    Math.floor((Number(milliseconds) || 0) / 1000)
-  );
-
+function formatTime(ms) {
+  const seconds = Math.floor((Number(ms) || 0) / 1000);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
@@ -66,6 +62,7 @@ function formatPlayedAt(value) {
   if (!value) return "";
 
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) return "";
 
   return new Intl.DateTimeFormat("en-US", {
@@ -77,19 +74,20 @@ function formatPlayedAt(value) {
 }
 
 function cacheKey(name) {
-  return `hitboy-spotify-${name}`;
+  return `spotify-${name}`;
 }
 
 function readCache(name) {
   try {
-    const raw = localStorage.getItem(cacheKey(name));
-    if (!raw) return null;
+    const item = JSON.parse(localStorage.getItem(cacheKey(name)));
 
-    const cached = JSON.parse(raw);
-    if (!cached?.savedAt || !("value" in cached)) return null;
-    if (Date.now() - cached.savedAt > CACHE_TTL) return null;
+    if (!item?.savedAt) return null;
 
-    return cached.value;
+    if (Date.now() - item.savedAt > CACHE_TTL) {
+      return null;
+    }
+
+    return item.value;
   } catch {
     return null;
   }
@@ -104,17 +102,15 @@ function writeCache(name, value) {
         value
       })
     );
-  } catch {
-  }
+  } catch {}
 }
 
-async function getAccessToken(forceRefresh) {
+async function getAccessToken(forceRefresh = false) {
   if (!forceRefresh && cachedToken && Date.now() < cachedTokenExpiry) {
     return cachedToken;
   }
 
   const response = await fetch(TOKEN_ENDPOINT, {
-    method: "GET",
     headers: {
       Accept: "application/json"
     },
@@ -122,26 +118,27 @@ async function getAccessToken(forceRefresh) {
   });
 
   if (!response.ok) {
-    throw new Error(`Token request failed with ${response.status}`);
+    throw new Error("Unable to get Spotify token");
   }
 
-  const payload = await response.json();
+  const data = await response.json();
 
-  if (!payload?.access_token) {
-    throw new Error("Token response missing access_token");
+  if (!data.access_token) {
+    throw new Error("Spotify token missing");
   }
 
-  cachedToken = payload.access_token;
-  cachedTokenExpiry = Date.now() + Math.max(0, (Number(payload.expires_in) || 0) - 30) * 1000;
+  cachedToken = data.access_token;
+
+  cachedTokenExpiry =
+    Date.now() + ((Number(data.expires_in) || 3600) - 30) * 1000;
 
   return cachedToken;
 }
 
-async function spotifyFetch(path) {
-  let token = await getAccessToken(false);
+async function spotifyFetch(endpoint) {
+  let token = await getAccessToken();
 
-  let response = await fetch(`${SPOTIFY_API_BASE}${path}`, {
-    method: "GET",
+  let response = await fetch(`${SPOTIFY_API_BASE}${endpoint}`, {
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${token}`
@@ -152,8 +149,7 @@ async function spotifyFetch(path) {
   if (response.status === 401) {
     token = await getAccessToken(true);
 
-    response = await fetch(`${SPOTIFY_API_BASE}${path}`, {
-      method: "GET",
+    response = await fetch(`${SPOTIFY_API_BASE}${endpoint}`, {
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${token}`
@@ -166,229 +162,112 @@ async function spotifyFetch(path) {
     return null;
   }
 
-  let payload = null;
-
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
+  const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(
-      payload?.error?.message || `Spotify returned ${response.status}`
-    );
+    throw new Error(data?.error?.message || "Spotify request failed");
   }
 
-  return payload;
+  return data;
 }
 
-function renderNowPlaying(payload, elements) {
-  const track = payload?.item;
+function renderNowPlaying(data, elements) {
+  if (!elements.nowRoot) return;
 
-  if (!elements.nowSection || !elements.nowRoot) {
-    return false;
-  }
-
-  setHidden(elements.nowSection, false);
+  const track = data?.item;
 
   if (!track) {
-    elements.nowRoot.innerHTML = `
-      <div class="spotify-empty">
-        Nothing is playing right now.
-      </div>
-    `;
-    return false;
+    elements.nowRoot.innerHTML =
+      "<div class='spotify-empty'>Nothing is playing right now.</div>";
+    return;
   }
 
-  const progress = Number(payload.progress_ms) || 0;
+  const progress = Number(data.progress_ms) || 0;
   const duration = Number(track.duration_ms) || 0;
-  const percent = duration > 0
-    ? Math.min(100, Math.max(0, progress / duration * 100))
+
+  const percent = duration
+    ? Math.min(100, (progress / duration) * 100)
     : 0;
 
   elements.nowRoot.innerHTML = `
     <article class="spotify-now-card">
-      <a
-        class="spotify-cover-link"
-        href="${escapeHtml(trackUrl(track))}"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <img
-          class="spotify-now-cover"
-          src="${escapeHtml(cover(track))}"
-          alt=""
-        >
-      </a>
-
-      <div class="spotify-now-info">
-        <span class="spotify-playing-label">
-          ${payload.is_playing ? "currently playing" : "paused"}
-        </span>
-
-        <a
-          class="spotify-track-title"
-          href="${escapeHtml(trackUrl(track))}"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          ${escapeHtml(track.name || "Unknown track")}
-        </a>
-
-        <span class="spotify-track-artist">
-          ${escapeHtml(artists(track))}
-        </span>
-
-        <span class="spotify-track-album">
-          ${escapeHtml(track.album?.name || "")}
-        </span>
+      <img class="spotify-now-cover" src="${escapeHtml(cover(track))}" alt="">
+      <div>
+        <span>${data.is_playing ? "currently playing" : "paused"}</span>
+        <h3>${escapeHtml(track.name)}</h3>
+        <p>${escapeHtml(artists(track))}</p>
+        <small>${escapeHtml(track.album?.name || "")}</small>
 
         <div class="spotify-progress">
-          <div class="spotify-progress-fill" style="width:${percent}%"></div>
+          <div style="width:${percent}%"></div>
         </div>
 
-        <div class="spotify-progress-times">
-          <span>${formatTime(progress)}</span>
-          <span>${formatTime(duration)}</span>
+        <div>
+          ${formatTime(progress)} / ${formatTime(duration)}
         </div>
       </div>
     </article>
   `;
-
-  return true;
 }
 
-function renderRecent(payload, elements) {
-  const items = Array.isArray(payload?.items) ? payload.items : [];
+function renderRecent(data, elements) {
+  if (!elements.recentRoot) return;
 
-  if (!elements.recentSection || !elements.recentRoot) {
-    return false;
+  const tracks = data?.items || [];
+
+  if (!tracks.length) {
+    elements.recentRoot.innerHTML =
+      "<div class='spotify-empty'>No recent tracks.</div>";
+    return;
   }
 
-  setHidden(elements.recentSection, false);
-
-  const entries = items
-    .filter((entry) => entry?.track)
-    .slice(0, 5);
-
-  if (!entries.length) {
-    elements.recentRoot.innerHTML = `
-      <div class="spotify-empty">
-        No recent tracks are available right now.
-      </div>
-    `;
-    return false;
-  }
-
-  elements.recentRoot.innerHTML = entries.map((entry) => {
-    const track = entry.track;
+  elements.recentRoot.innerHTML = tracks.map((item) => {
+    const track = item.track;
 
     return `
       <article class="spotify-recent-card">
-        <a
-          class="spotify-cover-link"
-          href="${escapeHtml(trackUrl(track))}"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img
-            class="spotify-recent-cover"
-            src="${escapeHtml(cover(track))}"
-            alt=""
-          >
-        </a>
-
-        <div class="spotify-recent-info">
-          <a
-            class="spotify-recent-title"
-            href="${escapeHtml(trackUrl(track))}"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            ${escapeHtml(track.name || "Unknown track")}
-          </a>
+        <img src="${escapeHtml(cover(track))}" alt="">
+        <div>
+          <strong>${escapeHtml(track.name)}</strong>
           <span>${escapeHtml(artists(track))}</span>
-          <small>${escapeHtml(formatPlayedAt(entry.played_at))}</small>
+          <small>${escapeHtml(formatPlayedAt(item.played_at))}</small>
         </div>
-
-        <a
-          class="spotify-open-button"
-          href="${escapeHtml(trackUrl(track))}"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          open
-        </a>
       </article>
     `;
   }).join("");
-
-  return true;
 }
 
 async function refreshSpotify() {
   if (refreshRunning) return;
 
-  const elements = getElements();
-
-  if (
-    !elements.nowSection &&
-    !elements.recentSection &&
-    !elements.fallback
-  ) {
-    stopSpotify();
-    return;
-  }
-
   refreshRunning = true;
 
+  const elements = getElements();
+
   try {
-    const [nowResult, recentResult] = await Promise.allSettled([
+    const [now, recent] = await Promise.all([
       spotifyFetch("/me/player/currently-playing"),
       spotifyFetch("/me/player/recently-played?limit=5")
     ]);
 
-    let nowData = null;
-    let recentData = null;
+    writeCache("now", now);
+    writeCache("recent", recent);
 
-    if (nowResult.status === "fulfilled") {
-      nowData = nowResult.value;
-      writeCache("now", nowData);
-    } else {
-      nowData = readCache("now");
-    }
-
-    if (recentResult.status === "fulfilled") {
-      recentData = recentResult.value;
-      writeCache("recent", recentData);
-    } else {
-      recentData = readCache("recent");
-    }
-
-    renderNowPlaying(nowData, elements);
-    renderRecent(recentData, elements);
+    renderNowPlaying(now, elements);
+    renderRecent(recent, elements);
 
     setHidden(elements.fallback, true);
-    setHidden(elements.nowSection, false);
-    setHidden(elements.recentSection, false);
-  } catch (error) {
-    console.error("Spotify refresh failed:", error);
-
+  } catch {
     renderNowPlaying(readCache("now"), elements);
     renderRecent(readCache("recent"), elements);
-
-    setHidden(elements.fallback, true);
-    setHidden(elements.nowSection, false);
-    setHidden(elements.recentSection, false);
   } finally {
     refreshRunning = false;
   }
 }
 
 function stopSpotify() {
-  if (refreshTimer !== null) {
-    window.clearInterval(refreshTimer);
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
     refreshTimer = null;
   }
 }
@@ -396,31 +275,26 @@ function stopSpotify() {
 function startSpotify() {
   stopSpotify();
   refreshSpotify();
-  refreshTimer = window.setInterval(refreshSpotify, REFRESH_INTERVAL);
+  refreshTimer = setInterval(refreshSpotify, REFRESH_INTERVAL);
 }
 
 function initializeSpotify() {
   const elements = getElements();
 
   if (
-    !elements.nowSection &&
-    !elements.recentSection &&
-    !elements.fallback
+    !elements.nowRoot &&
+    !elements.recentRoot
   ) {
     return;
   }
 
   startSpotify();
 
-  document.addEventListener(
-    "visibilitychange",
-    () => {
-      document.hidden ? stopSpotify() : startSpotify();
-    },
-    { passive: true }
-  );
+  document.addEventListener("visibilitychange", () => {
+    document.hidden ? stopSpotify() : startSpotify();
+  });
 
-  window.addEventListener("pagehide", stopSpotify, { once: true });
+  window.addEventListener("pagehide", stopSpotify);
 }
 
 if (document.readyState === "loading") {
