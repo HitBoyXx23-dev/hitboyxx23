@@ -1,4 +1,4 @@
-const TOKEN_ENDPOINT = "/api/spotify-token";
+const TOKEN_ENDPOINT = "https://spotify-api-mocha-nine.vercel.app/api/spotify-token";
 const SPOTIFY_API_BASE = "https://api.spotify.com/v1";
 const REFRESH_INTERVAL = 5000;
 const CACHE_TTL = 30 * 60 * 1000;
