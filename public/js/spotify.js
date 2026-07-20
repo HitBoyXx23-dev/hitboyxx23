@@ -1,6 +1,6 @@
 const TOKEN_ENDPOINT = "https://spotify-api-mocha-nine.vercel.app/api/spotify-token";
 const SPOTIFY_API_BASE = "https://api.spotify.com/v1";
-const REFRESH_INTERVAL = 5000;
+const REFRESH_INTERVAL = 1000;
 const CACHE_TTL = 30 * 60 * 1000;
 
 const PROFILE_FALLBACK = new URL(
@@ -9,9 +9,13 @@ const PROFILE_FALLBACK = new URL(
 ).href;
 
 let refreshTimer = null;
+let progressTimer = null;
 let refreshRunning = false;
 let cachedToken = null;
 let cachedTokenExpiry = 0;
+let currentProgress = 0;
+let currentDuration = 0;
+let currentPlaying = false;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -24,8 +28,6 @@ function escapeHtml(value) {
 
 function getElements() {
   return {
-    nowSection: document.querySelector("#now-playing-section"),
-    recentSection: document.querySelector("#recent-section"),
     nowRoot: document.querySelector("#spotify-now-playing"),
     recentRoot: document.querySelector("#spotify-recent"),
     fallback: document.querySelector("#spotify-fallback")
@@ -49,28 +51,10 @@ function cover(track) {
   return track?.album?.images?.[0]?.url || PROFILE_FALLBACK;
 }
 
-function trackUrl(track) {
-  return track?.external_urls?.spotify || "https://open.spotify.com";
-}
-
 function formatTime(ms) {
   const seconds = Math.floor((Number(ms) || 0) / 1000);
+
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-function formatPlayedAt(value) {
-  if (!value) return "";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "";
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(date);
 }
 
 function cacheKey(name) {
@@ -117,18 +101,9 @@ async function getAccessToken(forceRefresh = false) {
     cache: "no-store"
   });
 
-  if (!response.ok) {
-    throw new Error("Unable to get Spotify token");
-  }
-
   const data = await response.json();
 
-  if (!data.access_token) {
-    throw new Error("Spotify token missing");
-  }
-
   cachedToken = data.access_token;
-
   cachedTokenExpiry =
     Date.now() + ((Number(data.expires_in) || 3600) - 30) * 1000;
 
@@ -158,17 +133,32 @@ async function spotifyFetch(endpoint) {
     });
   }
 
-  if (response.status === 204) {
-    return null;
+  if (response.status === 204) return null;
+
+  return response.json();
+}
+
+function updateProgressBar() {
+  if (!currentPlaying) return;
+
+  currentProgress += 1000;
+
+  if (currentProgress > currentDuration) {
+    currentProgress = currentDuration;
   }
 
-  const data = await response.json();
+  const time = document.querySelector("#spotify-time");
+  const bar = document.querySelector("#spotify-progress-bar");
 
-  if (!response.ok) {
-    throw new Error(data?.error?.message || "Spotify request failed");
+  if (time) {
+    time.textContent =
+      `${formatTime(currentProgress)} / ${formatTime(currentDuration)}`;
   }
 
-  return data;
+  if (bar && currentDuration) {
+    bar.style.width =
+      `${(currentProgress / currentDuration) * 100}%`;
+  }
 }
 
 function renderNowPlaying(data, elements) {
@@ -182,11 +172,12 @@ function renderNowPlaying(data, elements) {
     return;
   }
 
-  const progress = Number(data.progress_ms) || 0;
-  const duration = Number(track.duration_ms) || 0;
+  currentProgress = Number(data.progress_ms) || 0;
+  currentDuration = Number(track.duration_ms) || 0;
+  currentPlaying = data.is_playing;
 
-  const percent = duration
-    ? Math.min(100, (progress / duration) * 100)
+  const percent = currentDuration
+    ? (currentProgress / currentDuration) * 100
     : 0;
 
   elements.nowRoot.innerHTML = `
@@ -199,11 +190,11 @@ function renderNowPlaying(data, elements) {
         <small>${escapeHtml(track.album?.name || "")}</small>
 
         <div class="spotify-progress">
-          <div style="width:${percent}%"></div>
+          <div id="spotify-progress-bar" style="width:${percent}%"></div>
         </div>
 
-        <div>
-          ${formatTime(progress)} / ${formatTime(duration)}
+        <div id="spotify-time">
+          ${formatTime(currentProgress)} / ${formatTime(currentDuration)}
         </div>
       </div>
     </article>
@@ -215,12 +206,6 @@ function renderRecent(data, elements) {
 
   const tracks = data?.items || [];
 
-  if (!tracks.length) {
-    elements.recentRoot.innerHTML =
-      "<div class='spotify-empty'>No recent tracks.</div>";
-    return;
-  }
-
   elements.recentRoot.innerHTML = tracks.map((item) => {
     const track = item.track;
 
@@ -230,7 +215,6 @@ function renderRecent(data, elements) {
         <div>
           <strong>${escapeHtml(track.name)}</strong>
           <span>${escapeHtml(artists(track))}</span>
-          <small>${escapeHtml(formatPlayedAt(item.played_at))}</small>
         </div>
       </article>
     `;
@@ -260,34 +244,26 @@ async function refreshSpotify() {
   } catch {
     renderNowPlaying(readCache("now"), elements);
     renderRecent(readCache("recent"), elements);
-  } finally {
-    refreshRunning = false;
   }
+
+  refreshRunning = false;
 }
 
 function stopSpotify() {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
+  clearInterval(refreshTimer);
+  clearInterval(progressTimer);
 }
 
 function startSpotify() {
   stopSpotify();
+
   refreshSpotify();
+
   refreshTimer = setInterval(refreshSpotify, REFRESH_INTERVAL);
+  progressTimer = setInterval(updateProgressBar, 1000);
 }
 
 function initializeSpotify() {
-  const elements = getElements();
-
-  if (
-    !elements.nowRoot &&
-    !elements.recentRoot
-  ) {
-    return;
-  }
-
   startSpotify();
 
   document.addEventListener("visibilitychange", () => {
@@ -298,11 +274,9 @@ function initializeSpotify() {
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener(
-    "DOMContentLoaded",
-    initializeSpotify,
-    { once: true }
-  );
+  document.addEventListener("DOMContentLoaded", initializeSpotify, {
+    once: true
+  });
 } else {
   initializeSpotify();
 }
