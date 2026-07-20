@@ -1,7 +1,5 @@
-
-const API_BASE = "https://spotify-connect-api.vercel.app";
-const USERNAME = "HitBoyXx23";
-const SHARE_URL = "https://spotify-connect-api.vercel.app/share/HitBoyXx23";
+const TOKEN_ENDPOINT = "/api/spotify-token";
+const SPOTIFY_API_BASE = "https://api.spotify.com/v1";
 const REFRESH_INTERVAL = 5000;
 const CACHE_TTL = 30 * 60 * 1000;
 
@@ -12,6 +10,8 @@ const PROFILE_FALLBACK = new URL(
 
 let refreshTimer = null;
 let refreshRunning = false;
+let cachedToken = null;
+let cachedTokenExpiry = 0;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -50,7 +50,7 @@ function cover(track) {
 }
 
 function trackUrl(track) {
-  return track?.external_urls?.spotify || SHARE_URL;
+  return track?.external_urls?.spotify || "https://open.spotify.com";
 }
 
 function formatTime(milliseconds) {
@@ -105,33 +105,85 @@ function writeCache(name, value) {
       })
     );
   } catch {
-    // Storage may be unavailable. The live page still works.
   }
 }
 
-function normalizeNowPlaying(payload) {
-  if (payload?.item) return payload;
+async function getAccessToken(forceRefresh) {
+  if (!forceRefresh && cachedToken && Date.now() < cachedTokenExpiry) {
+    return cachedToken;
+  }
 
-  if (payload?.track) {
-    return {
-      item: payload.track,
-      is_playing: payload.is_playing !== false,
-      progress_ms: Number(payload.progress_ms) || 0
-    };
+  const response = await fetch(TOKEN_ENDPOINT, {
+    method: "GET",
+    headers: {
+      Accept: "application/json"
+    },
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Token request failed with ${response.status}`);
+  }
+
+  const payload = await response.json();
+
+  if (!payload?.access_token) {
+    throw new Error("Token response missing access_token");
+  }
+
+  cachedToken = payload.access_token;
+  cachedTokenExpiry = Date.now() + Math.max(0, (Number(payload.expires_in) || 0) - 30) * 1000;
+
+  return cachedToken;
+}
+
+async function spotifyFetch(path) {
+  let token = await getAccessToken(false);
+
+  let response = await fetch(`${SPOTIFY_API_BASE}${path}`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    cache: "no-store"
+  });
+
+  if (response.status === 401) {
+    token = await getAccessToken(true);
+
+    response = await fetch(`${SPOTIFY_API_BASE}${path}`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      cache: "no-store"
+    });
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  let payload = null;
+
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      payload?.error?.message || `Spotify returned ${response.status}`
+    );
   }
 
   return payload;
 }
 
-function normalizeRecent(payload) {
-  if (Array.isArray(payload?.items)) return payload;
-  if (Array.isArray(payload)) return { items: payload };
-  if (Array.isArray(payload?.tracks)) return { items: payload.tracks };
-  return { items: [] };
-}
-
 function renderNowPlaying(payload, elements) {
-  payload = normalizeNowPlaying(payload);
   const track = payload?.item;
 
   if (!elements.nowSection || !elements.nowRoot) {
@@ -208,7 +260,7 @@ function renderNowPlaying(payload, elements) {
 }
 
 function renderRecent(payload, elements) {
-  payload = normalizeRecent(payload);
+  const items = Array.isArray(payload?.items) ? payload.items : [];
 
   if (!elements.recentSection || !elements.recentRoot) {
     return false;
@@ -216,12 +268,11 @@ function renderRecent(payload, elements) {
 
   setHidden(elements.recentSection, false);
 
-  const items = payload.items
-    .map((entry) => entry?.track ? entry : { track: entry })
+  const entries = items
     .filter((entry) => entry?.track)
     .slice(0, 5);
 
-  if (!items.length) {
+  if (!entries.length) {
     elements.recentRoot.innerHTML = `
       <div class="spotify-empty">
         No recent tracks are available right now.
@@ -230,7 +281,7 @@ function renderRecent(payload, elements) {
     return false;
   }
 
-  elements.recentRoot.innerHTML = items.map((entry) => {
+  elements.recentRoot.innerHTML = entries.map((entry) => {
     const track = entry.track;
 
     return `
@@ -276,34 +327,6 @@ function renderRecent(payload, elements) {
   return true;
 }
 
-async function fetchJson(path) {
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: "GET",
-    headers: {
-      Accept: "application/json"
-    },
-    cache: "no-store"
-  });
-
-  let payload;
-
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error("Spotify returned invalid data");
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      payload?.error ||
-      payload?.message ||
-      `Spotify returned ${response.status}`
-    );
-  }
-
-  return payload;
-}
-
 async function refreshSpotify() {
   if (refreshRunning) return;
 
@@ -322,8 +345,8 @@ async function refreshSpotify() {
 
   try {
     const [nowResult, recentResult] = await Promise.allSettled([
-      fetchJson(`/api/public/now-playing/${encodeURIComponent(USERNAME)}`),
-      fetchJson(`/api/public/recent-tracks/${encodeURIComponent(USERNAME)}`)
+      spotifyFetch("/me/player/currently-playing"),
+      spotifyFetch("/me/player/recently-played?limit=5")
     ]);
 
     let nowData = null;
@@ -346,7 +369,6 @@ async function refreshSpotify() {
     renderNowPlaying(nowData, elements);
     renderRecent(recentData, elements);
 
-    // The individual section placeholders already explain missing data.
     setHidden(elements.fallback, true);
     setHidden(elements.nowSection, false);
     setHidden(elements.recentSection, false);
