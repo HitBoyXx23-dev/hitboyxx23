@@ -1,4 +1,3 @@
-
 export const CONFIG = {
   githubUsername: "HitBoyXx23-dev",
   githubUrl: "https://github.com/HitBoyXx23-dev",
@@ -7,6 +6,8 @@ export const CONFIG = {
   anilistUrl: "https://anilist.co/user/HitBoyXx23",
 
   discordUsername: "hitboyxx23",
+  discordUrl: "https://discord.com/users/1114586353116647444",
+
   signalUsername: "hitboyxx23.01",
 
   spotifyUsername: "hitboyxx23",
