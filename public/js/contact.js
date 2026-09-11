@@ -1,4 +1,3 @@
-
 import { CONFIG } from "./config.js";
 
 const root = document.querySelector("#contact-list");
@@ -20,7 +19,8 @@ const contacts = [
   {
     name: "discord",
     value: CONFIG.discordUsername,
-    description: "copy my Discord username"
+    description: "copy my Discord username",
+    link: "https://discord.com/users/1114586353116647444"
   },
   {
     name: "signal",
@@ -30,14 +30,33 @@ const contacts = [
 ];
 
 root.innerHTML = contacts.map((contact) => `
-  <button class="contact-link copy-link" type="button" data-copy="${contact.value}">
-    <span class="contact-icon-wrap">${icons[contact.name]}</span>
-    <span class="contact-text">
-      <span>${contact.name}</span>
-      <small class="project-description">${contact.description}</small>
-    </span>
-    <small class="contact-url">${contact.value}</small>
-  </button>
+  <div class="contact-item">
+    <button
+      class="contact-link copy-link"
+      type="button"
+      data-copy="${contact.value}"
+    >
+      <span class="contact-icon-wrap">${icons[contact.name]}</span>
+
+      <span class="contact-text">
+        <span>${contact.name}</span>
+        <small class="project-description">${contact.description}</small>
+      </span>
+
+      <small class="contact-url">${contact.value}</small>
+    </button>
+
+    ${contact.link ? `
+      <a
+        class="contact-user-link"
+        href="${contact.link}"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        ${contact.link}
+      </a>
+    ` : ""}
+  </div>
 `).join("");
 
 root.querySelectorAll("[data-copy]").forEach((button) => {
@@ -57,7 +76,9 @@ root.querySelectorAll("[data-copy]").forEach((button) => {
 
     const label = button.querySelector(".contact-url");
     const original = label.textContent;
+
     label.textContent = "copied";
+
     setTimeout(() => {
       label.textContent = original;
     }, 1200);
