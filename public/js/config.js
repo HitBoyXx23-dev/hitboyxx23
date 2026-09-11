@@ -8,6 +8,9 @@ export const CONFIG = {
   discordUsername: "hitboyxx23",
   discordUrl: "https://discord.com/users/1114586353116647444",
 
+  discordServer1: "https://discord.gg/S96qVz38u3",
+  discordServer2: "https://discord.gg/e43sSZUqaj",
+
   signalUsername: "hitboyxx23.01",
 
   spotifyUsername: "hitboyxx23",
