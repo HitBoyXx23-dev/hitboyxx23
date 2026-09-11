@@ -3,9 +3,9 @@ import { CONFIG } from "./config.js";
 const root = document.querySelector("#anilist-stats");
 
 const PAGE_SIZE = 40;
-const CACHE_VERSION = 4;
-const CACHE_TTL = 10 * 60 * 1000;
-const STALE_CACHE_TTL = 24 * 60 * 60 * 1000;
+const CACHE_VERSION = 5;
+const CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
+const STALE_CACHE_TTL = 90 * 24 * 60 * 60 * 1000;
 const REQUEST_GAP = 500;
 
 let completedAll = [];
@@ -16,6 +16,7 @@ let completedSearch = "";
 let lastRequestAt = 0;
 let animeModalMounted = false;
 let characterModalMounted = false;
+
 const mediaLookup = new Map();
 const characterLookup = new Map();
 
@@ -400,6 +401,23 @@ query AnimeActivity($userId: Int!) {
 }
 `;
 
+const cacheCheckQuery = `
+query AnimeCacheCheck($name: String!) {
+  Page(page: 1, perPage: 1) {
+    activities(
+      userName: $name
+      type: ANIME_LIST
+      sort: ID_DESC
+    ) {
+      ... on ListActivity {
+        id
+        createdAt
+      }
+    }
+  }
+}
+`;
+
 function sleep(milliseconds) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, milliseconds);
@@ -410,14 +428,27 @@ function cacheKey(name) {
   return `hitboy-anilist-v${CACHE_VERSION}-${name}`;
 }
 
+function animeCacheMarkerKey() {
+  return `hitboy-anilist-marker-v${CACHE_VERSION}-${CONFIG.anilistUsername}`;
+}
+
 function readCache(name, maximumAge = CACHE_TTL) {
   try {
     const raw = localStorage.getItem(cacheKey(name));
-    if (!raw) return null;
+
+    if (!raw) {
+      return null;
+    }
 
     const cached = JSON.parse(raw);
-    if (!cached?.savedAt || !("value" in cached)) return null;
-    if (Date.now() - cached.savedAt > maximumAge) return null;
+
+    if (!cached?.savedAt || !("value" in cached)) {
+      return null;
+    }
+
+    if (Date.now() - cached.savedAt > maximumAge) {
+      return null;
+    }
 
     return cached.value;
   } catch {
@@ -439,6 +470,39 @@ function writeCache(name, value) {
   }
 }
 
+function readAnimeCacheMarker() {
+  try {
+    return localStorage.getItem(animeCacheMarkerKey()) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeAnimeCacheMarker(value) {
+  try {
+    localStorage.setItem(
+      animeCacheMarkerKey(),
+      String(value)
+    );
+  } catch {
+    return;
+  }
+}
+
+function clearAnimeCaches() {
+  try {
+    const prefix = `hitboy-anilist-v${CACHE_VERSION}-`;
+
+    Object.keys(localStorage).forEach((key) => {
+      if (key.startsWith(prefix)) {
+        localStorage.removeItem(key);
+      }
+    });
+  } catch {
+    return;
+  }
+}
+
 async function waitForRequestSlot() {
   const elapsed = Date.now() - lastRequestAt;
 
@@ -447,6 +511,73 @@ async function waitForRequestSlot() {
   }
 
   lastRequestAt = Date.now();
+}
+
+async function getLatestAnimeMarker() {
+  await waitForRequestSlot();
+
+  const response = await fetch("https://graphql.anilist.co", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    body: JSON.stringify({
+      query: cacheCheckQuery,
+      variables: {
+        name: CONFIG.anilistUsername
+      }
+    })
+  });
+
+  let payload;
+
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("AniList returned invalid data");
+  }
+
+  if (!response.ok || payload.errors?.length) {
+    throw new Error(
+      payload?.errors?.[0]?.message ||
+      `AniList returned ${response.status}`
+    );
+  }
+
+  const activity = payload.data?.Page?.activities?.[0];
+
+  if (!activity) {
+    return "";
+  }
+
+  return `${activity.id}:${activity.createdAt}`;
+}
+
+async function refreshAnimeCacheIfNeeded() {
+  try {
+    const latestMarker = await getLatestAnimeMarker();
+    const cachedMarker = readAnimeCacheMarker();
+
+    if (!latestMarker) {
+      return false;
+    }
+
+    if (!cachedMarker) {
+      writeAnimeCacheMarker(latestMarker);
+      return false;
+    }
+
+    if (latestMarker !== cachedMarker) {
+      clearAnimeCaches();
+      writeAnimeCacheMarker(latestMarker);
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 async function post(
@@ -460,7 +591,10 @@ async function post(
 ) {
   if (cacheName) {
     const fresh = readCache(cacheName, cacheAge);
-    if (fresh) return fresh;
+
+    if (fresh) {
+      return fresh;
+    }
   }
 
   let lastError = null;
@@ -486,27 +620,26 @@ async function post(
       try {
         payload = await response.json();
       } catch {
-        throw new Error(" returned invalid data");
+        throw new Error("AniList returned invalid data");
       }
 
       if (response.status === 429) {
-        const retryAfter = Number(
-          response.headers.get("Retry-After")
-        ) || 2;
+        const retryAfter =
+          Number(response.headers.get("Retry-After")) || 2;
 
-        const error = new Error(
-          " is temporarily rate limited"
-        );
+        const error =
+          new Error("AniList is temporarily rate limited");
 
         error.retryAfter = retryAfter;
         error.rateLimited = true;
+
         throw error;
       }
 
       if (!response.ok || payload.errors?.length) {
         throw new Error(
           payload?.errors?.[0]?.message ||
-          ` returned ${response.status}`
+          `AniList returned ${response.status}`
         );
       }
 
@@ -529,18 +662,29 @@ async function post(
   }
 
   if (cacheName) {
-    const stale = readCache(cacheName, STALE_CACHE_TTL);
-    if (stale) return stale;
+    const stale = readCache(
+      cacheName,
+      STALE_CACHE_TTL
+    );
+
+    if (stale) {
+      return stale;
+    }
   }
 
-  throw lastError || new Error(" could not be reached");
+  throw lastError ||
+    new Error("AniList could not be reached");
 }
 
 async function loadProfile() {
   const data = await post(
     profileQuery,
-    { name: CONFIG.anilistUsername },
-    { cacheName: "profile" }
+    {
+      name: CONFIG.anilistUsername
+    },
+    {
+      cacheName: "profile"
+    }
   );
 
   return data.User;
@@ -549,8 +693,12 @@ async function loadProfile() {
 async function loadDashboard() {
   return post(
     dashboardQuery,
-    { name: CONFIG.anilistUsername },
-    { cacheName: "dashboard" }
+    {
+      name: CONFIG.anilistUsername
+    },
+    {
+      cacheName: "dashboard"
+    }
   );
 }
 
@@ -569,19 +717,34 @@ async function loadListPage(status, page) {
 
   return data.Page || {
     mediaList: [],
-    pageInfo: { hasNextPage: false }
+    pageInfo: {
+      hasNextPage: false
+    }
   };
 }
 
 async function loadAllForStatus(status, firstPage) {
-  const all = [...(firstPage?.mediaList || [])];
+  const all = [
+    ...(firstPage?.mediaList || [])
+  ];
+
   let page = 2;
-  let hasNextPage = Boolean(firstPage?.pageInfo?.hasNextPage);
+  let hasNextPage =
+    Boolean(firstPage?.pageInfo?.hasNextPage);
 
   while (hasNextPage && page <= 20) {
-    const result = await loadListPage(status, page);
-    all.push(...(result.mediaList || []));
-    hasNextPage = Boolean(result.pageInfo?.hasNextPage);
+    const result = await loadListPage(
+      status,
+      page
+    );
+
+    all.push(
+      ...(result.mediaList || [])
+    );
+
+    hasNextPage =
+      Boolean(result.pageInfo?.hasNextPage);
+
     page += 1;
   }
 
@@ -589,6 +752,7 @@ async function loadAllForStatus(status, firstPage) {
 
   for (const entry of all) {
     const id = entry?.media?.id;
+
     if (id && !unique.has(id)) {
       unique.set(id, entry);
     }
@@ -601,19 +765,27 @@ async function loadRecentActivity(userId) {
   try {
     const data = await post(
       activityQuery,
-      { userId },
+      {
+        userId
+      },
       {
         cacheName: `activity-${userId}`,
-        cacheAge: 5 * 60 * 1000,
+        cacheAge: 30 * 24 * 60 * 60 * 1000,
         retries: 1
       }
     );
 
-    return (data.Page?.activities || []).filter(
+    return (
+      data.Page?.activities || []
+    ).filter(
       (activity) => activity?.media
     );
   } catch (error) {
-    console.warn("Recent activity could not load:", error);
+    console.warn(
+      "Recent activity could not load:",
+      error
+    );
+
     return [];
   }
 }
@@ -650,19 +822,29 @@ function seasonOf(media) {
       media.season.slice(1).toLowerCase()
     : "";
 
-  return [season, media?.seasonYear]
+  return [
+    season,
+    media?.seasonYear
+  ]
     .filter(Boolean)
     .join(" ");
 }
 
 function dateOf(timestamp) {
-  if (!timestamp) return "";
+  if (!timestamp) {
+    return "";
+  }
 
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "2-digit"
-  }).format(new Date(timestamp * 1000));
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "2-digit"
+    }
+  ).format(
+    new Date(timestamp * 1000)
+  );
 }
 
 function formatStatus(status) {
@@ -681,13 +863,22 @@ function formatSource(source) {
   return String(source || "")
     .split("_")
     .filter(Boolean)
-    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+    .map(
+      (word) =>
+        word.charAt(0) +
+        word.slice(1).toLowerCase()
+    )
     .join(" ");
 }
 
 function formatFuzzyDate(date) {
-  if (!date?.year) return "";
-  if (!date?.month || !date?.day) return String(date.year);
+  if (!date?.year) {
+    return "";
+  }
+
+  if (!date?.month || !date?.day) {
+    return String(date.year);
+  }
 
   return `${date.month}/${date.day}/${date.year}`;
 }
@@ -703,15 +894,22 @@ function stripDescription(html) {
 }
 
 function studiosOf(media) {
-  return (media?.studios?.nodes || [])
-    .map((studio) => studio?.name)
+  return (
+    media?.studios?.nodes || []
+  )
+    .map(
+      (studio) => studio?.name
+    )
     .filter(Boolean)
     .join(", ");
 }
 
 function trailerUrl(media) {
   const trailer = media?.trailer;
-  if (!trailer?.id) return "";
+
+  if (!trailer?.id) {
+    return "";
+  }
 
   if (trailer.site === "youtube") {
     return `https://www.youtube.com/watch?v=${trailer.id}`;
@@ -725,12 +923,28 @@ function trailerUrl(media) {
 }
 
 const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec"
 ];
 
 function formatBirthday(dateOfBirth) {
-  if (!dateOfBirth?.month || !dateOfBirth?.day) return "";
+  if (
+    !dateOfBirth?.month ||
+    !dateOfBirth?.day
+  ) {
+    return "";
+  }
+
   return `${MONTH_NAMES[dateOfBirth.month - 1]} ${dateOfBirth.day}`;
 }
 
@@ -738,42 +952,78 @@ function alternateNamesOf(character) {
   return [
     character?.name?.native,
     ...(character?.name?.alternative || [])
-  ].filter(Boolean).join(", ");
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 function formatCharacterDescription(raw) {
   const links = [];
 
-  const withPlaceholders = String(raw || "")
-    .replace(/~!([\s\S]*?)!~/g, "$1")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
-      const token = `@@LINK${links.length}@@`;
+  const withPlaceholders =
+    String(raw || "")
+      .replace(
+        /~!([\s\S]*?)!~/g,
+        "$1"
+      )
+      .replace(
+        /\[([^\]]+)\]\(([^)]+)\)/g,
+        (match, label, url) => {
+          const token =
+            `@@LINK${links.length}@@`;
 
-      links.push(
-        `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color:#7fa3ff;text-decoration:underline;">${escapeHtml(label)}</a>`
+          links.push(
+            `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color:#7fa3ff;text-decoration:underline;">${escapeHtml(label)}</a>`
+          );
+
+          return token;
+        }
       );
 
-      return token;
-    });
+  let html =
+    escapeHtml(withPlaceholders)
+      .replace(
+        /&lt;br\s*\/?&gt;/gi,
+        "<br>"
+      )
+      .replace(
+        /\*\*([\s\S]*?)\*\*/g,
+        "$1"
+      )
+      .replace(
+        /__([\s\S]*?)__/g,
+        "$1"
+      )
+      .replace(
+        /(\r?\n){2,}/g,
+        "<br><br>"
+      )
+      .replace(
+        /\r?\n/g,
+        " "
+      );
 
-  let html = escapeHtml(withPlaceholders)
-    .replace(/&lt;br\s*\/?&gt;/gi, "<br>")
-    .replace(/\*\*([\s\S]*?)\*\*/g, "$1")
-    .replace(/__([\s\S]*?)__/g, "$1")
-    .replace(/(\r?\n){2,}/g, "<br><br>")
-    .replace(/\r?\n/g, " ");
-
-  links.forEach((linkHtml, index) => {
-    html = html.replace(`@@LINK${index}@@`, linkHtml);
-  });
+  links.forEach(
+    (linkHtml, index) => {
+      html = html.replace(
+        `@@LINK${index}@@`,
+        linkHtml
+      );
+    }
+  );
 
   return html;
 }
 
 function officialStatusCount(user, status) {
-  const statuses = user?.statistics?.anime?.statuses || [];
+  const statuses =
+    user?.statistics?.anime?.statuses || [];
+
   return Number(
-    statuses.find((entry) => entry?.status === status)?.count
+    statuses.find(
+      (entry) =>
+        entry?.status === status
+    )?.count
   ) || 0;
 }
 
@@ -781,55 +1031,127 @@ function sectionHeader(title, count = "") {
   return `
     <div class="section-header">
       <h4>${escapeHtml(title)}</h4>
-      ${count !== ""
-        ? `<span class="section-count">(${escapeHtml(count)})</span>`
-        : ""
+      ${
+        count !== ""
+          ? `<span class="section-count">(${escapeHtml(count)})</span>`
+          : ""
       }
     </div>
   `;
 }
 
-function statsBar(user, currentCount = 0) {
-  const stats = user?.statistics?.anime || {};
+function statsBar(
+  user,
+  currentCount = 0
+) {
+  const stats =
+    user?.statistics?.anime || {};
 
   const values = [
-    [((Number(stats.minutesWatched) || 0) / 1440).toFixed(1), "Days Watched"],
-    [(Number(stats.episodesWatched) || 0).toLocaleString(), "Episodes"],
-    [(Number(stats.count) || 0).toLocaleString(), "Total"],
-    [(Number(stats.meanScore) || 0).toFixed(1), "Mean Score"],
-    [officialStatusCount(user, "COMPLETED").toLocaleString(), "Completed"],
-    [(Number(currentCount) || 0).toLocaleString(), "Currently Watching"],
-    [officialStatusCount(user, "PAUSED").toLocaleString(), "On Hold"],
-    [officialStatusCount(user, "DROPPED").toLocaleString(), "Dropped"],
-    [officialStatusCount(user, "PLANNING").toLocaleString(), "Plan to Watch"]
+    [
+      (
+        (Number(stats.minutesWatched) || 0) /
+        1440
+      ).toFixed(1),
+      "Days Watched"
+    ],
+    [
+      (
+        Number(stats.episodesWatched) || 0
+      ).toLocaleString(),
+      "Episodes"
+    ],
+    [
+      (
+        Number(stats.count) || 0
+      ).toLocaleString(),
+      "Total"
+    ],
+    [
+      (
+        Number(stats.meanScore) || 0
+      ).toFixed(1),
+      "Mean Score"
+    ],
+    [
+      officialStatusCount(
+        user,
+        "COMPLETED"
+      ).toLocaleString(),
+      "Completed"
+    ],
+    [
+      (
+        Number(currentCount) || 0
+      ).toLocaleString(),
+      "Currently Watching"
+    ],
+    [
+      officialStatusCount(
+        user,
+        "PAUSED"
+      ).toLocaleString(),
+      "On Hold"
+    ],
+    [
+      officialStatusCount(
+        user,
+        "DROPPED"
+      ).toLocaleString(),
+      "Dropped"
+    ],
+    [
+      officialStatusCount(
+        user,
+        "PLANNING"
+      ).toLocaleString(),
+      "Plan to Watch"
+    ]
   ];
 
   return `
     <div class="stats-bar">
-      ${values.map(([value, label]) => `
+      ${values
+        .map(
+          ([value, label]) => `
         <div class="stats-bar-item">
           <span class="stats-bar-value">${escapeHtml(value)}</span>
           <span class="stats-bar-label">${escapeHtml(label)}</span>
         </div>
-      `).join("")}
+      `
+        )
+        .join("")}
     </div>
   `;
 }
 
 function characterSection(characters) {
-  if (!characters.length) return "";
+  if (!characters.length) {
+    return "";
+  }
 
-  characters.forEach((character) => {
-    if (character?.id) {
-      characterLookup.set(String(character.id), character);
+  characters.forEach(
+    (character) => {
+      if (character?.id) {
+        characterLookup.set(
+          String(character.id),
+          character
+        );
+      }
     }
-  });
+  );
 
   return `
     <section>
-      ${sectionHeader("Favorite Characters", characters.length)}
+      ${sectionHeader(
+        "Favorite Characters",
+        characters.length
+      )}
+
       <div class="anime-grid character-grid">
-        ${characters.map((character) => `
+        ${characters
+          .map(
+            (character) => `
           <a
             class="anime-grid-item"
             href="${escapeHtml(character.siteUrl || "#")}"
@@ -844,13 +1166,16 @@ function characterSection(characters) {
                 loading="lazy"
               >
             </div>
+
             <div class="anime-grid-info">
               <div class="anime-grid-title">
                 ${escapeHtml(character.name?.full || "")}
               </div>
             </div>
           </a>
-        `).join("")}
+        `
+          )
+          .join("")}
       </div>
     </section>
   `;
@@ -858,14 +1183,29 @@ function characterSection(characters) {
 
 function currentCard(entry) {
   const media = entry.media;
-  const progress = Number(entry.progress) || 0;
-  const episodes = Number(media?.episodes) || 0;
-  const percent = episodes > 0
-    ? Math.min(100, progress / episodes * 100)
-    : 0;
+
+  const progress =
+    Number(entry.progress) || 0;
+
+  const episodes =
+    Number(media?.episodes) || 0;
+
+  const percent =
+    episodes > 0
+      ? Math.min(
+          100,
+          progress / episodes * 100
+        )
+      : 0;
 
   if (media?.id) {
-    mediaLookup.set(String(media.id), { entry, media });
+    mediaLookup.set(
+      String(media.id),
+      {
+        entry,
+        media
+      }
+    );
   }
 
   return `
@@ -882,6 +1222,7 @@ function currentCard(entry) {
           alt="${escapeHtml(titleOf(media))}"
           loading="lazy"
         >
+
         <div class="anime-card-overlay">
           <div class="anime-card-progress">
             <div
@@ -889,9 +1230,11 @@ function currentCard(entry) {
               style="width:${percent}%"
             ></div>
           </div>
+
           <div class="anime-card-episodes">
             <span class="current">${progress}</span>
-            ${episodes ? ` / ${episodes}` : ""} Episodes
+            ${episodes ? ` / ${episodes}` : ""}
+            Episodes
           </div>
         </div>
       </div>
@@ -900,12 +1243,15 @@ function currentCard(entry) {
         <div class="anime-card-title">
           ${escapeHtml(titleOf(media))}
         </div>
+
         <div class="anime-card-meta">
           <span>${escapeHtml(media?.format || "")}</span>
           <span>${escapeHtml(seasonOf(media))}</span>
-          ${media?.averageScore
-            ? `<span><span class="star">★</span> ${(media.averageScore / 10).toFixed(1)}</span>`
-            : ""
+
+          ${
+            media?.averageScore
+              ? `<span><span class="star">★</span> ${(media.averageScore / 10).toFixed(1)}</span>`
+              : ""
           }
         </div>
       </div>
@@ -917,7 +1263,13 @@ function gridCard(entry) {
   const media = entry.media;
 
   if (media?.id) {
-    mediaLookup.set(String(media.id), { entry, media });
+    mediaLookup.set(
+      String(media.id),
+      {
+        entry,
+        media
+      }
+    );
   }
 
   return `
@@ -934,9 +1286,11 @@ function gridCard(entry) {
           alt="${escapeHtml(titleOf(media))}"
           loading="lazy"
         >
-        ${entry.updatedAt
-          ? `<div class="anime-grid-date-badge" style="font-size:11px;">${escapeHtml(dateOf(entry.updatedAt))}</div>`
-          : ""
+
+        ${
+          entry.updatedAt
+            ? `<div class="anime-grid-date-badge" style="font-size:11px;">${escapeHtml(dateOf(entry.updatedAt))}</div>`
+            : ""
         }
       </div>
 
@@ -944,6 +1298,7 @@ function gridCard(entry) {
         <div class="anime-grid-title">
           ${escapeHtml(titleOf(media))}
         </div>
+
         <div class="anime-grid-meta">
           <span>${escapeHtml(media?.format || "")}</span>
           <span>${escapeHtml(seasonOf(media))}</span>
@@ -954,13 +1309,40 @@ function gridCard(entry) {
 }
 
 function activityLabel(activity) {
-  const status = String(activity?.status || "").toLowerCase();
+  const status =
+    String(
+      activity?.status || ""
+    ).toLowerCase();
 
-  if (status.includes("completed")) return "Completed";
-  if (status.includes("watched episode")) return "Watching";
-  if (status.includes("dropped")) return "Dropped";
-  if (status.includes("paused")) return "On Hold";
-  if (status.includes("plans to watch")) return "Plan to Watch";
+  if (
+    status.includes("completed")
+  ) {
+    return "Completed";
+  }
+
+  if (
+    status.includes("watched episode")
+  ) {
+    return "Watching";
+  }
+
+  if (
+    status.includes("dropped")
+  ) {
+    return "Dropped";
+  }
+
+  if (
+    status.includes("paused")
+  ) {
+    return "On Hold";
+  }
+
+  if (
+    status.includes("plans to watch")
+  ) {
+    return "Plan to Watch";
+  }
 
   return activity?.status || "Updated";
 }
@@ -970,91 +1352,134 @@ function groupActivity(activities) {
 
   for (const activity of activities) {
     const id = activity?.media?.id;
-    if (!id) continue;
 
-    const existing = grouped.get(id);
+    if (!id) {
+      continue;
+    }
+
+    const existing =
+      grouped.get(id);
 
     if (
       !existing ||
-      Number(activity.createdAt) > Number(existing.createdAt)
+      Number(activity.createdAt) >
+        Number(existing.createdAt)
     ) {
-      grouped.set(id, activity);
+      grouped.set(
+        id,
+        activity
+      );
     }
   }
 
   return [...grouped.values()]
-    .sort((a, b) => Number(b.createdAt) - Number(a.createdAt))
-    ;
+    .sort(
+      (a, b) =>
+        Number(b.createdAt) -
+        Number(a.createdAt)
+    );
 }
 
 function recentActivitySection(activities) {
-  const grouped = groupActivity(activities);
+  const grouped =
+    groupActivity(activities);
 
-  if (!grouped.length) return "";
+  if (!grouped.length) {
+    return "";
+  }
 
   return `
     <section class="recent-activity-section">
-      ${sectionHeader("Recent Activity", grouped.length)}
+      ${sectionHeader(
+        "Recent Activity",
+        grouped.length
+      )}
+
       <div class="activity-grid">
-        ${grouped.map((activity) => {
-          const media = activity.media;
+        ${grouped
+          .map(
+            (activity) => {
+              const media =
+                activity.media;
 
-          return `
-            <a
-              class="activity-card"
-              href="${escapeHtml(activity.siteUrl || media.siteUrl || "#")}"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <div class="activity-cover">
-                <img
-                  src="${escapeHtml(media.coverImage?.large || "")}"
-                  alt="${escapeHtml(titleOf(media))}"
-                  loading="lazy"
+              return `
+                <a
+                  class="activity-card"
+                  href="${escapeHtml(activity.siteUrl || media.siteUrl || "#")}"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
-                <div class="activity-date" style="font-size:11px;">
-                  ${escapeHtml(dateOf(activity.createdAt))}
-                </div>
-              </div>
+                  <div class="activity-cover">
+                    <img
+                      src="${escapeHtml(media.coverImage?.large || "")}"
+                      alt="${escapeHtml(titleOf(media))}"
+                      loading="lazy"
+                    >
 
-              <div class="activity-info">
-                <div class="activity-title">
-                  ${escapeHtml(titleOf(media))}
-                </div>
-                <div class="activity-meta">
-                  <span class="activity-status">
-                    ${escapeHtml(activityLabel(activity))}
-                  </span>
-                  ${activity.progress
-                    ? `<span>${escapeHtml(activity.progress)}</span>`
-                    : ""
-                  }
-                  <span>${escapeHtml(media.format || "")}</span>
-                </div>
-              </div>
-            </a>
-          `;
-        }).join("")}
+                    <div class="activity-date" style="font-size:11px;">
+                      ${escapeHtml(dateOf(activity.createdAt))}
+                    </div>
+                  </div>
+
+                  <div class="activity-info">
+                    <div class="activity-title">
+                      ${escapeHtml(titleOf(media))}
+                    </div>
+
+                    <div class="activity-meta">
+                      <span class="activity-status">
+                        ${escapeHtml(activityLabel(activity))}
+                      </span>
+
+                      ${
+                        activity.progress
+                          ? `<span>${escapeHtml(activity.progress)}</span>`
+                          : ""
+                      }
+
+                      <span>${escapeHtml(media.format || "")}</span>
+                    </div>
+                  </div>
+                </a>
+              `;
+            }
+          )
+          .join("")}
       </div>
     </section>
   `;
 }
 
-function simpleSection(title, entries) {
-  if (!entries.length) return "";
+function simpleSection(
+  title,
+  entries
+) {
+  if (!entries.length) {
+    return "";
+  }
 
   return `
     <section>
-      ${sectionHeader(title, entries.length)}
+      ${sectionHeader(
+        title,
+        entries.length
+      )}
+
       <div class="anime-grid">
-        ${entries.map(gridCard).join("")}
+        ${entries
+          .map(gridCard)
+          .join("")}
       </div>
     </section>
   `;
 }
 
 function completedSection(user) {
-  const total = officialStatusCount(user, "COMPLETED");
+  const total =
+    officialStatusCount(
+      user,
+      "COMPLETED"
+    );
 
   return `
     <section id="completed-section">
@@ -1073,53 +1498,102 @@ function completedSection(user) {
         >
       </div>
 
-      <div class="anime-grid" id="completed-grid"></div>
-      <div class="pagination" id="completed-pagination"></div>
+      <div
+        class="anime-grid"
+        id="completed-grid"
+      ></div>
+
+      <div
+        class="pagination"
+        id="completed-pagination"
+      ></div>
     </section>
   `;
 }
 
 function filteredCompleted() {
-  const search = normalizeSearch(completedSearch);
-
-  if (!search) return completedAll;
-
-  return completedAll.filter((entry) => {
-    const media = entry.media;
-
-    return [
-      titleOf(media),
-      media?.title?.english,
-      media?.title?.romaji
-    ].some((title) =>
-      normalizeSearch(title).includes(search)
+  const search =
+    normalizeSearch(
+      completedSearch
     );
-  });
+
+  if (!search) {
+    return completedAll;
+  }
+
+  return completedAll.filter(
+    (entry) => {
+      const media =
+        entry.media;
+
+      return [
+        titleOf(media),
+        media?.title?.english,
+        media?.title?.romaji
+      ].some(
+        (title) =>
+          normalizeSearch(title)
+            .includes(search)
+      );
+    }
+  );
 }
 
 function renderCompleted() {
-  const grid = document.querySelector("#completed-grid");
-  const pagination = document.querySelector("#completed-pagination");
+  const grid =
+    document.querySelector(
+      "#completed-grid"
+    );
 
-  if (!grid || !pagination) return;
+  const pagination =
+    document.querySelector(
+      "#completed-pagination"
+    );
 
-  const filtered = filteredCompleted();
-  const totalPages = Math.max(
-    1,
-    Math.ceil(filtered.length / PAGE_SIZE)
-  );
+  if (
+    !grid ||
+    !pagination
+  ) {
+    return;
+  }
 
-  completedPage = Math.min(
-    Math.max(1, completedPage),
-    totalPages
-  );
+  const filtered =
+    filteredCompleted();
 
-  const start = (completedPage - 1) * PAGE_SIZE;
-  const items = filtered.slice(start, start + PAGE_SIZE);
+  const totalPages =
+    Math.max(
+      1,
+      Math.ceil(
+        filtered.length /
+        PAGE_SIZE
+      )
+    );
 
-  grid.innerHTML = items.length
-    ? items.map(gridCard).join("")
-    : `<div class="notice">No completed anime match your search.</div>`;
+  completedPage =
+    Math.min(
+      Math.max(
+        1,
+        completedPage
+      ),
+      totalPages
+    );
+
+  const start =
+    (completedPage - 1) *
+    PAGE_SIZE;
+
+  const items =
+    filtered.slice(
+      start,
+      start + PAGE_SIZE
+    );
+
+  grid.innerHTML =
+    items.length
+      ? items
+          .map(gridCard)
+          .join("")
+      : `<div class="notice">No completed anime match your search.</div>`;
 
   pagination.innerHTML = `
     <button
@@ -1145,17 +1619,34 @@ function renderCompleted() {
     </button>
   `;
 
-  pagination.querySelectorAll("[data-page]").forEach((button) => {
-    button.addEventListener("click", () => {
-      completedPage = Number(button.dataset.page);
-      renderCompleted();
+  pagination
+    .querySelectorAll(
+      "[data-page]"
+    )
+    .forEach(
+      (button) => {
+        button.addEventListener(
+          "click",
+          () => {
+            completedPage =
+              Number(
+                button.dataset.page
+              );
 
-      document.querySelector("#completed-section")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start"
-      });
-    });
-  });
+            renderCompleted();
+
+            document
+              .querySelector(
+                "#completed-section"
+              )
+              ?.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+              });
+          }
+        );
+      }
+    );
 }
 
 function profileSection(user) {
@@ -1165,16 +1656,29 @@ function profileSection(user) {
 
       <div class="profile-stats">
         <div class="profile-stat">
-          <span class="profile-label">Username</span>
-          <span class="profile-value">${escapeHtml(user.name)}</span>
+          <span class="profile-label">
+            Username
+          </span>
+
+          <span class="profile-value">
+            ${escapeHtml(user.name)}
+          </span>
         </div>
 
         <div class="profile-stat">
-          <span class="profile-label">Member Since</span>
+          <span class="profile-label">
+            Member Since
+          </span>
+
           <span class="profile-value">
             ${escapeHtml(
-              new Intl.DateTimeFormat("en-US").format(
-                new Date(user.createdAt * 1000)
+              new Intl.DateTimeFormat(
+                "en-US"
+              ).format(
+                new Date(
+                  user.createdAt *
+                  1000
+                )
               )
             )}
           </span>
@@ -1182,6 +1686,7 @@ function profileSection(user) {
 
         <div class="profile-stat">
           <span class="profile-label"></span>
+
           <a
             class="profile-value profile-link"
             href="${escapeHtml(user.siteUrl)}"
@@ -1197,33 +1702,70 @@ function profileSection(user) {
 }
 
 function activityEpisodeText(activity) {
-  const rawStatus = String(activity?.status || "");
-  const progress = String(activity?.progress || "").trim();
+  const rawStatus =
+    String(
+      activity?.status || ""
+    );
 
-  if (/completed/i.test(rawStatus)) {
+  const progress =
+    String(
+      activity?.progress || ""
+    ).trim();
+
+  if (
+    /completed/i.test(
+      rawStatus
+    )
+  ) {
     return "Completed";
   }
 
-  if (/dropped/i.test(rawStatus)) {
-    return progress ? `Dropped at ${progress}` : "Dropped";
+  if (
+    /dropped/i.test(
+      rawStatus
+    )
+  ) {
+    return progress
+      ? `Dropped at ${progress}`
+      : "Dropped";
   }
 
-  if (/paused/i.test(rawStatus)) {
-    return progress ? `On Hold at ${progress}` : "On Hold";
+  if (
+    /paused/i.test(
+      rawStatus
+    )
+  ) {
+    return progress
+      ? `On Hold at ${progress}`
+      : "On Hold";
   }
 
-  if (/plans to watch/i.test(rawStatus)) {
+  if (
+    /plans to watch/i.test(
+      rawStatus
+    )
+  ) {
     return "Added to Plan to Watch";
   }
 
-  if (/watched episode/i.test(rawStatus)) {
+  if (
+    /watched episode/i.test(
+      rawStatus
+    )
+  ) {
     if (progress) {
-      return /^episode/i.test(progress)
+      return /^episode/i.test(
+        progress
+      )
         ? `Watched ${progress}`
         : `Watched episode ${progress}`;
     }
 
-    const match = rawStatus.match(/watched episode\s*(.+)$/i);
+    const match =
+      rawStatus.match(
+        /watched episode\s*(.+)$/i
+      );
+
     if (match?.[1]) {
       return `Watched episode ${match[1]}`;
     }
@@ -1233,113 +1775,260 @@ function activityEpisodeText(activity) {
 
   return progress
     ? `${rawStatus || "Updated"} ${progress}`.trim()
-    : (rawStatus || "Updated");
+    : (
+        rawStatus ||
+        "Updated"
+      );
 }
 
 function activityMediaMeta(media) {
   const parts = [];
 
   if (media?.format) {
-    parts.push(media.format);
+    parts.push(
+      media.format
+    );
   }
 
-  const season = seasonOf(media);
+  const season =
+    seasonOf(media);
+
   if (season) {
-    parts.push(season);
+    parts.push(
+      season
+    );
   }
 
   return parts.join(" • ");
 }
 
 function groupedRecentActivity(activities) {
-  const map = new Map();
+  const map =
+    new Map();
 
-  for (const activity of activities || []) {
-    const mediaId = activity?.media?.id;
+  for (
+    const activity of
+    activities || []
+  ) {
+    const mediaId =
+      activity?.media?.id;
 
-    if (!mediaId) continue;
+    if (!mediaId) {
+      continue;
+    }
 
-    const existing = map.get(mediaId);
+    const existing =
+      map.get(mediaId);
 
     if (
       !existing ||
-      Number(activity.createdAt) > Number(existing.createdAt)
+      Number(activity.createdAt) >
+        Number(existing.createdAt)
     ) {
-      map.set(mediaId, activity);
+      map.set(
+        mediaId,
+        activity
+      );
     }
   }
 
   return [...map.values()]
-    .sort((a, b) => Number(b.createdAt) - Number(a.createdAt))
-    ;
+    .sort(
+      (a, b) =>
+        Number(b.createdAt) -
+        Number(a.createdAt)
+    );
 }
 
 function recentActivityStatus(activity) {
-  const status = String(activity?.status || "").toLowerCase();
+  const status =
+    String(
+      activity?.status || ""
+    ).toLowerCase();
 
-  if (status.includes("completed")) return "Completed";
-  if (status.includes("watched episode")) return "Watching";
-  if (status.includes("dropped")) return "Dropped";
-  if (status.includes("paused")) return "On Hold";
-  if (status.includes("plans to watch")) return "Plan to Watch";
+  if (
+    status.includes("completed")
+  ) {
+    return "Completed";
+  }
+
+  if (
+    status.includes("watched episode")
+  ) {
+    return "Watching";
+  }
+
+  if (
+    status.includes("dropped")
+  ) {
+    return "Dropped";
+  }
+
+  if (
+    status.includes("paused")
+  ) {
+    return "On Hold";
+  }
+
+  if (
+    status.includes("plans to watch")
+  ) {
+    return "Plan to Watch";
+  }
 
   return activity?.status || "Updated";
 }
 
 function closeRecentActivityModal() {
-  document.querySelector("#recent-activity-modal")
-    ?.classList.remove("open");
+  document
+    .querySelector(
+      "#recent-activity-modal"
+    )
+    ?.classList.remove(
+      "open"
+    );
 
-  document.querySelector("#recent-activity-backdrop")
-    ?.classList.remove("open");
+  document
+    .querySelector(
+      "#recent-activity-backdrop"
+    )
+    ?.classList.remove(
+      "open"
+    );
 
-  document.querySelector("#recent-activity-button")
-    ?.setAttribute("aria-expanded", "false");
+  document
+    .querySelector(
+      "#recent-activity-button"
+    )
+    ?.setAttribute(
+      "aria-expanded",
+      "false"
+    );
 
-  document.body.classList.remove("recent-activity-open");
+  document.body.classList.remove(
+    "recent-activity-open"
+  );
 }
 
 function openRecentActivityModal() {
-  document.querySelector("#recent-activity-modal")
-    ?.classList.add("open");
+  document
+    .querySelector(
+      "#recent-activity-modal"
+    )
+    ?.classList.add(
+      "open"
+    );
 
-  document.querySelector("#recent-activity-backdrop")
-    ?.classList.add("open");
+  document
+    .querySelector(
+      "#recent-activity-backdrop"
+    )
+    ?.classList.add(
+      "open"
+    );
 
-  document.querySelector("#recent-activity-button")
-    ?.setAttribute("aria-expanded", "true");
+  document
+    .querySelector(
+      "#recent-activity-button"
+    )
+    ?.setAttribute(
+      "aria-expanded",
+      "true"
+    );
 
-  document.body.classList.add("recent-activity-open");
+  document.body.classList.add(
+    "recent-activity-open"
+  );
 }
 
 function removeRecentActivityUi() {
-  document.querySelector("#recent-activity-button")?.remove();
-  document.querySelector("#recent-activity-modal")?.remove();
-  document.querySelector("#recent-activity-backdrop")?.remove();
-  document.body.classList.remove("recent-activity-open");
+  document
+    .querySelector(
+      "#recent-activity-button"
+    )
+    ?.remove();
+
+  document
+    .querySelector(
+      "#recent-activity-modal"
+    )
+    ?.remove();
+
+  document
+    .querySelector(
+      "#recent-activity-backdrop"
+    )
+    ?.remove();
+
+  document.body.classList.remove(
+    "recent-activity-open"
+  );
 }
 
-function mountRecentActivityButton(activities) {
+function mountRecentActivityButton(
+  activities
+) {
   removeRecentActivityUi();
 
-  const grouped = groupedRecentActivity(activities);
+  const grouped =
+    groupedRecentActivity(
+      activities
+    );
 
-  if (!grouped.length) return;
+  if (!grouped.length) {
+    return;
+  }
 
-  const backdrop = document.createElement("button");
-  backdrop.id = "recent-activity-backdrop";
-  backdrop.className = "recent-activity-backdrop";
-  backdrop.type = "button";
-  backdrop.setAttribute("aria-label", "Close recent activity");
-  backdrop.addEventListener("click", closeRecentActivityModal);
+  const backdrop =
+    document.createElement(
+      "button"
+    );
 
-  const modal = document.createElement("section");
-  modal.id = "recent-activity-modal";
-  modal.className = "recent-activity-modal";
+  backdrop.id =
+    "recent-activity-backdrop";
 
-  modal.setAttribute("role", "dialog");
-  modal.setAttribute("aria-modal", "true");
-  modal.setAttribute("aria-label", "Recent Activity");
+  backdrop.className =
+    "recent-activity-backdrop";
+
+  backdrop.type =
+    "button";
+
+  backdrop.setAttribute(
+    "aria-label",
+    "Close recent activity"
+  );
+
+  backdrop.addEventListener(
+    "click",
+    closeRecentActivityModal
+  );
+
+  const modal =
+    document.createElement(
+      "section"
+    );
+
+  modal.id =
+    "recent-activity-modal";
+
+  modal.className =
+    "recent-activity-modal";
+
+  modal.setAttribute(
+    "role",
+    "dialog"
+  );
+
+  modal.setAttribute(
+    "aria-modal",
+    "true"
+  );
+
+  modal.setAttribute(
+    "aria-label",
+    "Recent Activity"
+  );
+
   modal.innerHTML = `
     <div class="recent-activity-modal-header">
       <div>
@@ -1356,49 +2045,90 @@ function mountRecentActivityButton(activities) {
     </div>
 
     <div class="recent-activity-modal-list">
-      ${grouped.map((activity) => {
-        const media = activity.media;
+      ${grouped
+        .map(
+          (activity) => {
+            const media =
+              activity.media;
 
-        return `
-          <a
-            class="recent-activity-modal-item"
-            href="${escapeHtml(activity.siteUrl || media.siteUrl || "#")}"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <img
-              src="${escapeHtml(media.coverImage?.large || "")}"
-              alt="${escapeHtml(titleOf(media))}"
-              loading="lazy"
-            >
+            return `
+              <a
+                class="recent-activity-modal-item"
+                href="${escapeHtml(activity.siteUrl || media.siteUrl || "#")}"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  src="${escapeHtml(media.coverImage?.large || "")}"
+                  alt="${escapeHtml(titleOf(media))}"
+                  loading="lazy"
+                >
 
-            <span class="recent-activity-copy">
-              <strong>${escapeHtml(titleOf(media))}</strong>
-              <small class="recent-activity-primary">
-                ${escapeHtml(activityEpisodeText(activity))}
-              </small>
-              ${activityMediaMeta(media)
-                ? `<small class="recent-activity-meta">${escapeHtml(activityMediaMeta(media))}</small>`
-                : ""
-              }
-              <time style="font-size:11px;">${escapeHtml(dateOf(activity.createdAt))}</time>
-            </span>
-          </a>
-        `;
-      }).join("")}
+                <span class="recent-activity-copy">
+                  <strong>
+                    ${escapeHtml(titleOf(media))}
+                  </strong>
+
+                  <small class="recent-activity-primary">
+                    ${escapeHtml(activityEpisodeText(activity))}
+                  </small>
+
+                  ${
+                    activityMediaMeta(media)
+                      ? `<small class="recent-activity-meta">${escapeHtml(activityMediaMeta(media))}</small>`
+                      : ""
+                  }
+
+                  <time style="font-size:11px;">
+                    ${escapeHtml(dateOf(activity.createdAt))}
+                  </time>
+                </span>
+              </a>
+            `;
+          }
+        )
+        .join("")}
     </div>
   `;
 
-  modal.querySelector(".recent-activity-close")
-    ?.addEventListener("click", closeRecentActivityModal);
+  modal
+    .querySelector(
+      ".recent-activity-close"
+    )
+    ?.addEventListener(
+      "click",
+      closeRecentActivityModal
+    );
 
-  const button = document.createElement("button");
-  button.id = "recent-activity-button";
-  button.className = "recent-activity-button";
-  button.type = "button";
-  button.setAttribute("aria-label", `Open ${grouped.length} recent activity items`);
-  button.setAttribute("aria-controls", "recent-activity-modal");
-  button.setAttribute("aria-expanded", "false");
+  const button =
+    document.createElement(
+      "button"
+    );
+
+  button.id =
+    "recent-activity-button";
+
+  button.className =
+    "recent-activity-button";
+
+  button.type =
+    "button";
+
+  button.setAttribute(
+    "aria-label",
+    `Open ${grouped.length} recent activity items`
+  );
+
+  button.setAttribute(
+    "aria-controls",
+    "recent-activity-modal"
+  );
+
+  button.setAttribute(
+    "aria-expanded",
+    "false"
+  );
+
   button.innerHTML = `
     <svg
       aria-hidden="true"
@@ -1416,17 +2146,27 @@ function mountRecentActivityButton(activities) {
     <span>${grouped.length}</span>
   `;
 
-  button.addEventListener("click", () => {
-    const modalIsOpen = modal.classList.contains("open");
+  button.addEventListener(
+    "click",
+    () => {
+      const modalIsOpen =
+        modal.classList.contains(
+          "open"
+        );
 
-    if (modalIsOpen) {
-      closeRecentActivityModal();
-    } else {
-      openRecentActivityModal();
+      if (modalIsOpen) {
+        closeRecentActivityModal();
+      } else {
+        openRecentActivityModal();
+      }
     }
-  });
+  );
 
-  document.body.append(backdrop, modal, button);
+  document.body.append(
+    backdrop,
+    modal,
+    button
+  );
 }
 
 function detailBadge(text) {
@@ -1438,35 +2178,70 @@ function detailGenrePill(text) {
 }
 
 function animeModalContent(record) {
-  const entry = record.entry;
-  const media = record.media;
+  const entry =
+    record.entry;
+
+  const media =
+    record.media;
 
   const badges = [
     media.format,
-    formatStatus(media.status),
+    formatStatus(
+      media.status
+    ),
     seasonOf(media),
-    media.episodes ? `${media.episodes} eps` : "",
-    media.duration ? `${media.duration} min` : ""
+    media.episodes
+      ? `${media.episodes} eps`
+      : "",
+    media.duration
+      ? `${media.duration} min`
+      : ""
   ].filter(Boolean);
 
   const infoBadges = [];
-  const studios = studiosOf(media);
-  const source = formatSource(media.source);
 
-  if (studios) infoBadges.push(`studio: ${studios}`);
-  if (source) infoBadges.push(`source: ${source}`);
+  const studios =
+    studiosOf(media);
 
-  const progressText = entry
-    ? `progress: ${Number(entry.progress) || 0}${media.episodes ? ` / ${media.episodes}` : ""}`
-    : "";
+  const source =
+    formatSource(
+      media.source
+    );
+
+  if (studios) {
+    infoBadges.push(
+      `studio: ${studios}`
+    );
+  }
+
+  if (source) {
+    infoBadges.push(
+      `source: ${source}`
+    );
+  }
+
+  const progressText =
+    entry
+      ? `progress: ${Number(entry.progress) || 0}${media.episodes ? ` / ${media.episodes}` : ""}`
+      : "";
 
   const aired = [
-    formatFuzzyDate(media.startDate),
-    formatFuzzyDate(media.endDate)
-  ].filter(Boolean).join(" – ");
+    formatFuzzyDate(
+      media.startDate
+    ),
+    formatFuzzyDate(
+      media.endDate
+    )
+  ]
+    .filter(Boolean)
+    .join(" - ");
 
-  const genres = (media.genres || []).slice(0, 5);
-  const trailer = trailerUrl(media);
+  const genres =
+    (media.genres || [])
+      .slice(0, 5);
+
+  const trailer =
+    trailerUrl(media);
 
   return `
     <div class="detail-header">
@@ -1482,48 +2257,86 @@ function animeModalContent(record) {
         </h2>
 
         <div class="detail-badges">
-          ${badges.map(detailBadge).join("")}
+          ${badges
+            .map(detailBadge)
+            .join("")}
         </div>
 
-        ${media.averageScore ? `
+        ${
+          media.averageScore
+            ? `
           <div class="detail-score">
             <span class="star">★</span>
-            <strong>${(media.averageScore / 10).toFixed(1)}</strong>
+            <strong>
+              ${(media.averageScore / 10).toFixed(1)}
+            </strong>
             <span>(average)</span>
           </div>
-        ` : ""}
+        `
+            : ""
+        }
 
-        ${infoBadges.length ? `
-          <div class="detail-badges" style="margin-top:10px;">
-            ${infoBadges.map(detailBadge).join("")}
+        ${
+          infoBadges.length
+            ? `
+          <div
+            class="detail-badges"
+            style="margin-top:10px;"
+          >
+            ${infoBadges
+              .map(detailBadge)
+              .join("")}
           </div>
-        ` : ""}
+        `
+            : ""
+        }
 
-        ${progressText ? `
+        ${
+          progressText
+            ? `
           <div style="margin-top:10px;">
             ${detailBadge(progressText)}
           </div>
-        ` : ""}
+        `
+            : ""
+        }
 
-        ${aired ? `
+        ${
+          aired
+            ? `
           <div style="margin-top:10px;">
             ${detailBadge(`aired: ${aired}`)}
           </div>
-        ` : ""}
+        `
+            : ""
+        }
 
-        ${genres.length ? `
-          <div class="detail-badges" style="margin-top:10px;">
-            ${genres.map(detailGenrePill).join("")}
+        ${
+          genres.length
+            ? `
+          <div
+            class="detail-badges"
+            style="margin-top:10px;"
+          >
+            ${genres
+              .map(detailGenrePill)
+              .join("")}
           </div>
-        ` : ""}
+        `
+            : ""
+        }
       </div>
     </div>
 
-    ${media.description ? `
+    ${
+      media.description
+        ? `
       <p class="detail-description">
         ${escapeHtml(stripDescription(media.description))}
       </p>
-    ` : ""}
+    `
+        : ""
+    }
 
     <div class="detail-actions">
       <a
@@ -1531,85 +2344,195 @@ function animeModalContent(record) {
         href="${escapeHtml(media.siteUrl || "#")}"
         target="_blank"
         rel="noopener noreferrer"
-      >view on anilist</a>
+      >
+        view on anilist
+      </a>
 
-      ${trailer ? `
+      ${
+        trailer
+          ? `
         <a
           class="detail-btn detail-btn-primary"
           href="${escapeHtml(trailer)}"
           target="_blank"
           rel="noopener noreferrer"
-        >trailer</a>
-      ` : ""}
+        >
+          trailer
+        </a>
+      `
+          : ""
+      }
 
       <button
         class="detail-btn detail-btn-secondary"
         data-close
         type="button"
-      >close</button>
+      >
+        close
+      </button>
     </div>
   `;
 }
 
 function ensureAnimeModalMounted() {
-  if (animeModalMounted) return;
+  if (animeModalMounted) {
+    return;
+  }
+
   animeModalMounted = true;
 
-  const backdrop = document.createElement("button");
-  backdrop.id = "anime-detail-backdrop";
-  backdrop.className = "detail-backdrop";
-  backdrop.type = "button";
-  backdrop.setAttribute("aria-label", "Close anime details");
-  backdrop.addEventListener("click", closeAnimeModal);
+  const backdrop =
+    document.createElement(
+      "button"
+    );
 
-  const modal = document.createElement("section");
-  modal.id = "anime-detail-modal";
-  modal.className = "detail-modal";
-  modal.setAttribute("role", "dialog");
-  modal.setAttribute("aria-modal", "true");
+  backdrop.id =
+    "anime-detail-backdrop";
 
-  document.body.append(backdrop, modal);
+  backdrop.className =
+    "detail-backdrop";
+
+  backdrop.type =
+    "button";
+
+  backdrop.setAttribute(
+    "aria-label",
+    "Close anime details"
+  );
+
+  backdrop.addEventListener(
+    "click",
+    closeAnimeModal
+  );
+
+  const modal =
+    document.createElement(
+      "section"
+    );
+
+  modal.id =
+    "anime-detail-modal";
+
+  modal.className =
+    "detail-modal";
+
+  modal.setAttribute(
+    "role",
+    "dialog"
+  );
+
+  modal.setAttribute(
+    "aria-modal",
+    "true"
+  );
+
+  document.body.append(
+    backdrop,
+    modal
+  );
 }
 
 function closeAnimeModal() {
-  document.querySelector("#anime-detail-modal")
-    ?.classList.remove("open");
+  document
+    .querySelector(
+      "#anime-detail-modal"
+    )
+    ?.classList.remove(
+      "open"
+    );
 
-  document.querySelector("#anime-detail-backdrop")
-    ?.classList.remove("open");
+  document
+    .querySelector(
+      "#anime-detail-backdrop"
+    )
+    ?.classList.remove(
+      "open"
+    );
 
-  document.body.classList.remove("anime-detail-open");
+  document.body.classList.remove(
+    "anime-detail-open"
+  );
 }
 
 function openAnimeModal(id) {
-  const record = mediaLookup.get(String(id));
-  if (!record) return;
+  const record =
+    mediaLookup.get(
+      String(id)
+    );
+
+  if (!record) {
+    return;
+  }
 
   ensureAnimeModalMounted();
 
-  const modal = document.querySelector("#anime-detail-modal");
-  const backdrop = document.querySelector("#anime-detail-backdrop");
-  if (!modal || !backdrop) return;
+  const modal =
+    document.querySelector(
+      "#anime-detail-modal"
+    );
 
-  modal.innerHTML = animeModalContent(record);
+  const backdrop =
+    document.querySelector(
+      "#anime-detail-backdrop"
+    );
 
-  modal.querySelectorAll("[data-close]").forEach((button) => {
-    button.addEventListener("click", closeAnimeModal);
-  });
+  if (
+    !modal ||
+    !backdrop
+  ) {
+    return;
+  }
 
-  modal.classList.add("open");
-  backdrop.classList.add("open");
-  document.body.classList.add("anime-detail-open");
+  modal.innerHTML =
+    animeModalContent(
+      record
+    );
+
+  modal
+    .querySelectorAll(
+      "[data-close]"
+    )
+    .forEach(
+      (button) => {
+        button.addEventListener(
+          "click",
+          closeAnimeModal
+        );
+      }
+    );
+
+  modal.classList.add(
+    "open"
+  );
+
+  backdrop.classList.add(
+    "open"
+  );
+
+  document.body.classList.add(
+    "anime-detail-open"
+  );
 }
 
 function characterModalContent(character) {
   const badges = [
-    formatBirthday(character.dateOfBirth) ? `birthday: ${formatBirthday(character.dateOfBirth)}` : "",
-    character.age ? `initial age: ${character.age}` : "",
-    character.gender ? `gender: ${character.gender}` : ""
+    formatBirthday(
+      character.dateOfBirth
+    )
+      ? `birthday: ${formatBirthday(character.dateOfBirth)}`
+      : "",
+    character.age
+      ? `initial age: ${character.age}`
+      : "",
+    character.gender
+      ? `gender: ${character.gender}`
+      : ""
   ].filter(Boolean);
 
-  const alternateNames = alternateNamesOf(character);
+  const alternateNames =
+    alternateNamesOf(
+      character
+    );
 
   return `
     <div class="detail-header">
@@ -1624,25 +2547,41 @@ function characterModalContent(character) {
           ${escapeHtml(character.name?.full || "")}
         </h2>
 
-        ${alternateNames ? `
+        ${
+          alternateNames
+            ? `
           <div style="margin-bottom:10px;">
-            <span class="detail-badge-wrap">${escapeHtml(alternateNames)}</span>
+            <span class="detail-badge-wrap">
+              ${escapeHtml(alternateNames)}
+            </span>
           </div>
-        ` : ""}
+        `
+            : ""
+        }
 
-        ${badges.length ? `
+        ${
+          badges.length
+            ? `
           <div class="detail-badges">
-            ${badges.map(detailBadge).join("")}
+            ${badges
+              .map(detailBadge)
+              .join("")}
           </div>
-        ` : ""}
+        `
+            : ""
+        }
       </div>
     </div>
 
-    ${character.description ? `
+    ${
+      character.description
+        ? `
       <p class="detail-description">
         ${formatCharacterDescription(character.description)}
       </p>
-    ` : ""}
+    `
+        : ""
+    }
 
     <div class="detail-actions">
       <a
@@ -1650,125 +2589,300 @@ function characterModalContent(character) {
         href="${escapeHtml(character.siteUrl || "#")}"
         target="_blank"
         rel="noopener noreferrer"
-      >view on anilist</a>
+      >
+        view on anilist
+      </a>
 
       <button
         class="detail-btn detail-btn-secondary"
         data-close
         type="button"
-      >close</button>
+      >
+        close
+      </button>
     </div>
   `;
 }
 
 function ensureCharacterModalMounted() {
-  if (characterModalMounted) return;
-  characterModalMounted = true;
-
-  const backdrop = document.createElement("button");
-  backdrop.id = "character-detail-backdrop";
-  backdrop.className = "detail-backdrop";
-  backdrop.type = "button";
-  backdrop.setAttribute("aria-label", "Close character details");
-  backdrop.addEventListener("click", closeCharacterModal);
-
-  const modal = document.createElement("section");
-  modal.id = "character-detail-modal";
-  modal.className = "detail-modal";
-  modal.setAttribute("role", "dialog");
-  modal.setAttribute("aria-modal", "true");
-
-  document.body.append(backdrop, modal);
-}
-
-function closeCharacterModal() {
-  document.querySelector("#character-detail-modal")
-    ?.classList.remove("open");
-
-  document.querySelector("#character-detail-backdrop")
-    ?.classList.remove("open");
-
-  document.body.classList.remove("character-detail-open");
-}
-
-function openCharacterModal(id) {
-  const character = characterLookup.get(String(id));
-  if (!character) return;
-
-  ensureCharacterModalMounted();
-
-  const modal = document.querySelector("#character-detail-modal");
-  const backdrop = document.querySelector("#character-detail-backdrop");
-  if (!modal || !backdrop) return;
-
-  modal.innerHTML = characterModalContent(character);
-
-  modal.querySelectorAll("[data-close]").forEach((button) => {
-    button.addEventListener("click", closeCharacterModal);
-  });
-
-  modal.classList.add("open");
-  backdrop.classList.add("open");
-  document.body.classList.add("character-detail-open");
-}
-
-document.addEventListener("click", (event) => {
-  const characterTrigger = event.target.closest("[data-character-id]");
-
-  if (characterTrigger && root?.contains(characterTrigger)) {
-    const id = characterTrigger.dataset.characterId;
-    if (!id) return;
-
-    event.preventDefault();
-    openCharacterModal(id);
+  if (
+    characterModalMounted
+  ) {
     return;
   }
 
-  const trigger = event.target.closest("[data-media-id]");
-  if (!trigger) return;
-  if (!root?.contains(trigger)) return;
+  characterModalMounted =
+    true;
 
-  const id = trigger.dataset.mediaId;
-  if (!id) return;
+  const backdrop =
+    document.createElement(
+      "button"
+    );
 
-  event.preventDefault();
-  openAnimeModal(id);
-});
+  backdrop.id =
+    "character-detail-backdrop";
 
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    closeRecentActivityModal();
-    closeAnimeModal();
-    closeCharacterModal();
+  backdrop.className =
+    "detail-backdrop";
+
+  backdrop.type =
+    "button";
+
+  backdrop.setAttribute(
+    "aria-label",
+    "Close character details"
+  );
+
+  backdrop.addEventListener(
+    "click",
+    closeCharacterModal
+  );
+
+  const modal =
+    document.createElement(
+      "section"
+    );
+
+  modal.id =
+    "character-detail-modal";
+
+  modal.className =
+    "detail-modal";
+
+  modal.setAttribute(
+    "role",
+    "dialog"
+  );
+
+  modal.setAttribute(
+    "aria-modal",
+    "true"
+  );
+
+  document.body.append(
+    backdrop,
+    modal
+  );
+}
+
+function closeCharacterModal() {
+  document
+    .querySelector(
+      "#character-detail-modal"
+    )
+    ?.classList.remove(
+      "open"
+    );
+
+  document
+    .querySelector(
+      "#character-detail-backdrop"
+    )
+    ?.classList.remove(
+      "open"
+    );
+
+  document.body.classList.remove(
+    "character-detail-open"
+  );
+}
+
+function openCharacterModal(id) {
+  const character =
+    characterLookup.get(
+      String(id)
+    );
+
+  if (!character) {
+    return;
   }
-});
+
+  ensureCharacterModalMounted();
+
+  const modal =
+    document.querySelector(
+      "#character-detail-modal"
+    );
+
+  const backdrop =
+    document.querySelector(
+      "#character-detail-backdrop"
+    );
+
+  if (
+    !modal ||
+    !backdrop
+  ) {
+    return;
+  }
+
+  modal.innerHTML =
+    characterModalContent(
+      character
+    );
+
+  modal
+    .querySelectorAll(
+      "[data-close]"
+    )
+    .forEach(
+      (button) => {
+        button.addEventListener(
+          "click",
+          closeCharacterModal
+        );
+      }
+    );
+
+  modal.classList.add(
+    "open"
+  );
+
+  backdrop.classList.add(
+    "open"
+  );
+
+  document.body.classList.add(
+    "character-detail-open"
+  );
+}
+
+document.addEventListener(
+  "click",
+  (event) => {
+    const characterTrigger =
+      event.target.closest(
+        "[data-character-id]"
+      );
+
+    if (
+      characterTrigger &&
+      root?.contains(
+        characterTrigger
+      )
+    ) {
+      const id =
+        characterTrigger.dataset
+          .characterId;
+
+      if (!id) {
+        return;
+      }
+
+      event.preventDefault();
+
+      openCharacterModal(id);
+
+      return;
+    }
+
+    const trigger =
+      event.target.closest(
+        "[data-media-id]"
+      );
+
+    if (!trigger) {
+      return;
+    }
+
+    if (
+      !root?.contains(
+        trigger
+      )
+    ) {
+      return;
+    }
+
+    const id =
+      trigger.dataset.mediaId;
+
+    if (!id) {
+      return;
+    }
+
+    event.preventDefault();
+
+    openAnimeModal(id);
+  }
+);
+
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (
+      event.key === "Escape"
+    ) {
+      closeRecentActivityModal();
+      closeAnimeModal();
+      closeCharacterModal();
+    }
+  }
+);
 
 async function loadCurrent(firstPage) {
-  const all = [...(firstPage?.mediaList || [])];
-  let page = 2;
-  let hasNextPage = Boolean(firstPage?.pageInfo?.hasNextPage);
+  const all = [
+    ...(firstPage?.mediaList || [])
+  ];
 
-  while (hasNextPage && page <= 20) {
-    const result = await loadListPage("CURRENT", page);
-    all.push(...(result.mediaList || []));
-    hasNextPage = Boolean(result.pageInfo?.hasNextPage);
+  let page = 2;
+
+  let hasNextPage =
+    Boolean(
+      firstPage?.pageInfo?.hasNextPage
+    );
+
+  while (
+    hasNextPage &&
+    page <= 20
+  ) {
+    const result =
+      await loadListPage(
+        "CURRENT",
+        page
+      );
+
+    all.push(
+      ...(result.mediaList || [])
+    );
+
+    hasNextPage =
+      Boolean(
+        result.pageInfo?.hasNextPage
+      );
+
     page += 1;
   }
 
-  const unique = new Map();
+  const unique =
+    new Map();
 
   for (const entry of all) {
-    const id = entry?.media?.id;
-    if (id && !unique.has(id)) {
-      unique.set(id, entry);
+    const id =
+      entry?.media?.id;
+
+    if (
+      id &&
+      !unique.has(id)
+    ) {
+      unique.set(
+        id,
+        entry
+      );
     }
   }
 
-  return [...unique.values()];
+  return [
+    ...unique.values()
+  ];
 }
 
 async function loadAnime() {
-  if (!root) return;
+  if (!root) {
+    return;
+  }
+
+  mediaLookup.clear();
+  characterLookup.clear();
 
   root.innerHTML = `
     <div class="loading-spinner">
@@ -1777,99 +2891,197 @@ async function loadAnime() {
   `;
 
   try {
-    const [user, dashboard] = await Promise.all([
+    const [
+      user,
+      dashboard
+    ] = await Promise.all([
       loadProfile(),
       loadDashboard()
     ]);
 
     if (!user) {
       throw new Error(
-        ` user ${CONFIG.anilistUsername} was not found`
+        `AniList user ${CONFIG.anilistUsername} was not found`
       );
     }
 
-    const firstCurrent = dashboard.current || {
-      mediaList: [],
-      pageInfo: { hasNextPage: false }
-    };
+    const firstCurrent =
+      dashboard.current || {
+        mediaList: [],
+        pageInfo: {
+          hasNextPage: false
+        }
+      };
 
-    const firstCompleted = dashboard.completed || {
-      mediaList: [],
-      pageInfo: { hasNextPage: false }
-    };
+    const firstCompleted =
+      dashboard.completed || {
+        mediaList: [],
+        pageInfo: {
+          hasNextPage: false
+        }
+      };
 
-    const firstPlanned = dashboard.planned || {
-      mediaList: [],
-      pageInfo: { hasNextPage: false }
-    };
+    const firstPlanned =
+      dashboard.planned || {
+        mediaList: [],
+        pageInfo: {
+          hasNextPage: false
+        }
+      };
 
-    const firstDropped = dashboard.dropped || {
-      mediaList: [],
-      pageInfo: { hasNextPage: false }
-    };
+    const firstDropped =
+      dashboard.dropped || {
+        mediaList: [],
+        pageInfo: {
+          hasNextPage: false
+        }
+      };
 
-    const [current, completed, planned, dropped] = await Promise.all([
-      loadCurrent(firstCurrent),
-      loadAllForStatus("COMPLETED", firstCompleted),
-      loadAllForStatus("PLANNING", firstPlanned),
-      loadAllForStatus("DROPPED", firstDropped)
+    const [
+      current,
+      completed,
+      planned,
+      dropped
+    ] = await Promise.all([
+      loadCurrent(
+        firstCurrent
+      ),
+      loadAllForStatus(
+        "COMPLETED",
+        firstCompleted
+      ),
+      loadAllForStatus(
+        "PLANNING",
+        firstPlanned
+      ),
+      loadAllForStatus(
+        "DROPPED",
+        firstDropped
+      )
     ]);
 
-    completedAll = completed;
-    plannedAll = planned;
-    droppedAll = dropped;
+    completedAll =
+      completed;
 
-    const characters = user.favourites?.characters?.nodes || [];
+    plannedAll =
+      planned;
+
+    droppedAll =
+      dropped;
+
+    const characters =
+      user.favourites
+        ?.characters
+        ?.nodes || [];
 
     root.innerHTML = `
       ${statsBar(user, current.length)}
+
       ${characterSection(characters)}
 
-      ${current.length ? `
+      ${
+        current.length
+          ? `
         <section>
-          ${sectionHeader("Currently Watching", current.length)}
+          ${sectionHeader(
+            "Currently Watching",
+            current.length
+          )}
+
           <div class="anime-carousel">
-            ${current.map(currentCard).join("")}
+            ${current
+              .map(currentCard)
+              .join("")}
           </div>
         </section>
-      ` : ""}
+      `
+          : ""
+      }
 
       ${completedSection(user)}
-      ${simpleSection("Plan to Watch", plannedAll)}
-      ${simpleSection("Dropped", droppedAll)}
+
+      ${simpleSection(
+        "Plan to Watch",
+        plannedAll
+      )}
+
+      ${simpleSection(
+        "Dropped",
+        droppedAll
+      )}
+
       ${profileSection(user)}
     `;
 
     renderCompleted();
 
-    const search = document.querySelector("#anime-search-input");
+    const search =
+      document.querySelector(
+        "#anime-search-input"
+      );
 
-    search?.addEventListener("input", (event) => {
-      completedSearch = event.target.value;
-      completedPage = 1;
-      renderCompleted();
-    });
+    search?.addEventListener(
+      "input",
+      (event) => {
+        completedSearch =
+          event.target.value;
 
-    window.setTimeout(async () => {
-      const activities = await loadRecentActivity(user.id);
-      mountRecentActivityButton(activities);
-    }, 1000);
+        completedPage = 1;
+
+        renderCompleted();
+      }
+    );
+
+    window.setTimeout(
+      async () => {
+        const activities =
+          await loadRecentActivity(
+            user.id
+          );
+
+        mountRecentActivityButton(
+          activities
+        );
+      },
+      1000
+    );
   } catch (error) {
     removeRecentActivityUi();
+
     root.innerHTML = `
       <div class="notice error">
-        <strong>Anime stats could not load.</strong><br>
-        ${escapeHtml(error.message)}.<br>
+        <strong>
+          Anime stats could not load.
+        </strong>
+        <br>
+
+        ${escapeHtml(error.message)}.
+        <br>
+
         <a
           href="${escapeHtml(CONFIG.anilistUrl)}"
           target="_blank"
           rel="noopener noreferrer"
         >
-          Open  directly
+          Open AniList directly
         </a>
       </div>
     `;
   }
 }
 
-loadAnime();
+async function startAnime() {
+  await loadAnime();
+
+  const changed =
+    await refreshAnimeCacheIfNeeded();
+
+  if (changed) {
+    completedPage = 1;
+    completedSearch = "";
+
+    await loadAnime();
+  }
+}
+
+startAnime();
