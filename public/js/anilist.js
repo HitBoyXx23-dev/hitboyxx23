@@ -3,9 +3,9 @@ import { CONFIG } from "./config.js";
 const root = document.querySelector("#anilist-stats");
 
 const PAGE_SIZE = 40;
-const CACHE_VERSION = 5;
-const CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
-const STALE_CACHE_TTL = 90 * 24 * 60 * 60 * 1000;
+const CACHE_VERSION = 6;
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+const STALE_CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
 const REQUEST_GAP = 500;
 
 let completedAll = [];
@@ -401,23 +401,6 @@ query AnimeActivity($userId: Int!) {
 }
 `;
 
-const cacheCheckQuery = `
-query AnimeCacheCheck($name: String!) {
-  Page(page: 1, perPage: 1) {
-    activities(
-      userName: $name
-      type: ANIME_LIST
-      sort: ID_DESC
-    ) {
-      ... on ListActivity {
-        id
-        createdAt
-      }
-    }
-  }
-}
-`;
-
 function sleep(milliseconds) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, milliseconds);
@@ -426,10 +409,6 @@ function sleep(milliseconds) {
 
 function cacheKey(name) {
   return `hitboy-anilist-v${CACHE_VERSION}-${name}`;
-}
-
-function animeCacheMarkerKey() {
-  return `hitboy-anilist-marker-v${CACHE_VERSION}-${CONFIG.anilistUsername}`;
 }
 
 function readCache(name, maximumAge = CACHE_TTL) {
@@ -513,83 +492,17 @@ async function waitForRequestSlot() {
   lastRequestAt = Date.now();
 }
 
-async function getLatestAnimeMarker() {
-  await waitForRequestSlot();
-
-  const response = await fetch("https://graphql.anilist.co", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Accept": "application/json"
-    },
-    body: JSON.stringify({
-      query: cacheCheckQuery,
-      variables: {
-        name: CONFIG.anilistUsername
-      }
-    })
-  });
-
-  let payload;
-
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error("AniList returned invalid data");
-  }
-
-  if (!response.ok || payload.errors?.length) {
-    throw new Error(
-      payload?.errors?.[0]?.message ||
-      `AniList returned ${response.status}`
-    );
-  }
-
-  const activity = payload.data?.Page?.activities?.[0];
-
-  if (!activity) {
-    return "";
-  }
-
-  return `${activity.id}:${activity.createdAt}`;
-}
-
-async function refreshAnimeCacheIfNeeded() {
-  try {
-    const latestMarker = await getLatestAnimeMarker();
-    const cachedMarker = readAnimeCacheMarker();
-
-    if (!latestMarker) {
-      return false;
-    }
-
-    if (!cachedMarker) {
-      writeAnimeCacheMarker(latestMarker);
-      return false;
-    }
-
-    if (latestMarker !== cachedMarker) {
-      clearAnimeCaches();
-      writeAnimeCacheMarker(latestMarker);
-      return true;
-    }
-
-    return false;
-  } catch {
-    return false;
-  }
-}
-
 async function post(
   queryText,
   variables,
   {
     cacheName = "",
     cacheAge = CACHE_TTL,
-    retries = 2
+    retries = 2,
+    forceRefresh = false
   } = {}
 ) {
-  if (cacheName) {
+  if (cacheName && !forceRefresh) {
     const fresh = readCache(cacheName, cacheAge);
 
     if (fresh) {
@@ -676,33 +589,35 @@ async function post(
     new Error("AniList could not be reached");
 }
 
-async function loadProfile() {
+async function loadProfile(forceRefresh = false) {
   const data = await post(
     profileQuery,
     {
       name: CONFIG.anilistUsername
     },
     {
-      cacheName: "profile"
+      cacheName: "profile",
+      forceRefresh
     }
   );
 
   return data.User;
 }
 
-async function loadDashboard() {
+async function loadDashboard(forceRefresh = false) {
   return post(
     dashboardQuery,
     {
       name: CONFIG.anilistUsername
     },
     {
-      cacheName: "dashboard"
+      cacheName: "dashboard",
+      forceRefresh
     }
   );
 }
 
-async function loadListPage(status, page) {
+async function loadListPage(status, page, forceRefresh = false) {
   const data = await post(
     listPageQuery,
     {
@@ -711,7 +626,8 @@ async function loadListPage(status, page) {
       page
     },
     {
-      cacheName: `list-${status}-${page}`
+      cacheName: `list-${status}-${page}`,
+      forceRefresh
     }
   );
 
@@ -723,7 +639,7 @@ async function loadListPage(status, page) {
   };
 }
 
-async function loadAllForStatus(status, firstPage) {
+async function loadAllForStatus(status, firstPage, forceRefresh = false) {
   const all = [
     ...(firstPage?.mediaList || [])
   ];
@@ -735,7 +651,8 @@ async function loadAllForStatus(status, firstPage) {
   while (hasNextPage && page <= 20) {
     const result = await loadListPage(
       status,
-      page
+      page,
+      forceRefresh
     );
 
     all.push(
@@ -761,7 +678,7 @@ async function loadAllForStatus(status, firstPage) {
   return [...unique.values()];
 }
 
-async function loadRecentActivity(userId) {
+async function loadRecentActivity(userId, forceRefresh = false) {
   try {
     const data = await post(
       activityQuery,
@@ -771,7 +688,8 @@ async function loadRecentActivity(userId) {
       {
         cacheName: `activity-${userId}`,
         cacheAge: 30 * 24 * 60 * 60 * 1000,
-        retries: 1
+        retries: 1,
+        forceRefresh
       }
     );
 
@@ -2819,7 +2737,7 @@ document.addEventListener(
   }
 );
 
-async function loadCurrent(firstPage) {
+async function loadCurrent(firstPage, forceRefresh = false) {
   const all = [
     ...(firstPage?.mediaList || [])
   ];
@@ -2838,7 +2756,8 @@ async function loadCurrent(firstPage) {
     const result =
       await loadListPage(
         "CURRENT",
-        page
+        page,
+        forceRefresh
       );
 
     all.push(
@@ -2876,27 +2795,29 @@ async function loadCurrent(firstPage) {
   ];
 }
 
-async function loadAnime() {
+async function loadAnime(forceRefresh = false, showLoading = true) {
   if (!root) {
     return;
   }
 
-  mediaLookup.clear();
-  characterLookup.clear();
+  if (showLoading) {
+    mediaLookup.clear();
+    characterLookup.clear();
 
-  root.innerHTML = `
-    <div class="loading-spinner">
-      Loading anime stats...
-    </div>
-  `;
+    root.innerHTML = `
+      <div class="loading-spinner">
+        Loading anime stats...
+      </div>
+    `;
+  }
 
   try {
     const [
       user,
       dashboard
     ] = await Promise.all([
-      loadProfile(),
-      loadDashboard()
+      loadProfile(forceRefresh),
+      loadDashboard(forceRefresh)
     ]);
 
     if (!user) {
@@ -2944,35 +2865,37 @@ async function loadAnime() {
       dropped
     ] = await Promise.all([
       loadCurrent(
-        firstCurrent
+        firstCurrent,
+        forceRefresh
       ),
       loadAllForStatus(
         "COMPLETED",
-        firstCompleted
+        firstCompleted,
+        forceRefresh
       ),
       loadAllForStatus(
         "PLANNING",
-        firstPlanned
+        firstPlanned,
+        forceRefresh
       ),
       loadAllForStatus(
         "DROPPED",
-        firstDropped
+        firstDropped,
+        forceRefresh
       )
     ]);
 
-    completedAll =
-      completed;
-
-    plannedAll =
-      planned;
-
-    droppedAll =
-      dropped;
+    completedAll = completed;
+    plannedAll = planned;
+    droppedAll = dropped;
 
     const characters =
       user.favourites
         ?.characters
         ?.nodes || [];
+
+    mediaLookup.clear();
+    characterLookup.clear();
 
     root.innerHTML = `
       ${statsBar(user, current.length)}
@@ -3036,51 +2959,61 @@ async function loadAnime() {
       async () => {
         const activities =
           await loadRecentActivity(
-            user.id
+            user.id,
+            forceRefresh
           );
 
         mountRecentActivityButton(
           activities
         );
       },
-      1000
+      forceRefresh ? 0 : 1000
     );
+
+    return true;
   } catch (error) {
-    removeRecentActivityUi();
+    if (!forceRefresh) {
+      removeRecentActivityUi();
 
-    root.innerHTML = `
-      <div class="notice error">
-        <strong>
-          Anime stats could not load.
-        </strong>
-        <br>
+      root.innerHTML = `
+        <div class="notice error">
+          <strong>
+            Anime stats could not load.
+          </strong>
+          <br>
 
-        ${escapeHtml(error.message)}.
-        <br>
+          ${escapeHtml(error.message)}.
+          <br>
 
-        <a
-          href="${escapeHtml(CONFIG.anilistUrl)}"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open AniList directly
-        </a>
-      </div>
-    `;
+          <a
+            href="${escapeHtml(CONFIG.anilistUrl)}"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open AniList directly
+          </a>
+        </div>
+      `;
+    }
+
+    throw error;
   }
 }
 
 async function startAnime() {
-  await loadAnime();
+  try {
+    await loadAnime(false, true);
+  } catch {
+    return;
+  }
 
-  const changed =
-    await refreshAnimeCacheIfNeeded();
-
-  if (changed) {
+  try {
     completedPage = 1;
     completedSearch = "";
 
-    await loadAnime();
+    await loadAnime(true, false);
+  } catch {
+    return;
   }
 }
 
