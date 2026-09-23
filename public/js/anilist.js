@@ -792,8 +792,7 @@ function statsBar(user, currentCount = 0) {
     [(Number(stats.count) || 0).toLocaleString(), "Total"],
     [(Number(stats.meanScore) || 0).toFixed(1), "Mean Score"],
     [officialStatusCount(user, "COMPLETED").toLocaleString(), "Completed"],
-    [officialStatusCount(user, "CURRENT").toLocaleString(), "Watching"],
-    [(Number(currentCount) || 0).toLocaleString(), "Currently Watching"],
+    [(Number(currentCount) || 0).toLocaleString(), "Watching"],
     [officialStatusCount(user, "PAUSED").toLocaleString(), "On Hold"],
     [officialStatusCount(user, "DROPPED").toLocaleString(), "Dropped"],
     [officialStatusCount(user, "PLANNING").toLocaleString(), "Plan to Watch"]
