@@ -480,7 +480,7 @@ async function post(
       try {
         payload = await response.json();
       } catch {
-        throw new Error("AniList returned invalid data");
+        throw new Error(" returned invalid data");
       }
 
       if (response.status === 429) {
@@ -489,7 +489,7 @@ async function post(
         ) || 2;
 
         const error = new Error(
-          "AniList is temporarily rate limited"
+          " is temporarily rate limited"
         );
 
         error.retryAfter = retryAfter;
@@ -500,7 +500,7 @@ async function post(
       if (!response.ok || payload.errors?.length) {
         throw new Error(
           payload?.errors?.[0]?.message ||
-          `AniList returned ${response.status}`
+          ` returned ${response.status}`
         );
       }
 
@@ -523,18 +523,11 @@ async function post(
   }
 
   if (cacheName) {
-    const stale = readCache(
-      cacheName,
-      STALE_CACHE_TTL
-    );
-
-    if (stale) {
-      return stale;
-    }
+    const stale = readCache(cacheName, STALE_CACHE_TTL);
+    if (stale) return stale;
   }
 
-  throw lastError ||
-    new Error("AniList could not be reached");
+  throw lastError || new Error(" could not be reached");
 }
 
 async function loadProfile() {
@@ -790,7 +783,6 @@ function sectionHeader(title, count = "") {
   `;
 }
 
-function statsBar(user) {
 function statsBar(user, currentCount = 0) {
   const stats = user?.statistics?.anime || {};
 
@@ -1791,7 +1783,6 @@ async function loadAnime() {
       );
     }
 
-    const current = dashboard.current?.mediaList || [];
     const firstCurrent = dashboard.current || {
       mediaList: [],
       pageInfo: { hasNextPage: false }
@@ -1812,7 +1803,6 @@ async function loadAnime() {
       pageInfo: { hasNextPage: false }
     };
 
-    [completedAll, plannedAll, droppedAll] = await Promise.all([
     const [current, completed, planned, dropped] = await Promise.all([
       loadCurrent(firstCurrent),
       loadAllForStatus("COMPLETED", firstCompleted),
@@ -1827,7 +1817,6 @@ async function loadAnime() {
     const characters = user.favourites?.characters?.nodes || [];
 
     root.innerHTML = `
-      ${statsBar(user)}
       ${statsBar(user, current.length)}
       ${characterSection(characters)}
 
